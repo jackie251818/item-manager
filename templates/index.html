@@ -1,0 +1,360 @@
+{% extends 'base.html' %}
+{% block title %}首页 - 物品使用登记系统{% endblock %}
+
+{% block content %}
+<!-- 统计卡片 -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon">👥</div>
+        <div class="stat-number">{{ stats.person_count }}</div>
+        <div class="stat-label">人员总数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">📦</div>
+        <div class="stat-number">{{ stats.item_count }}</div>
+        <div class="stat-label">物品种类</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">🔄</div>
+        <div class="stat-number">{{ stats.borrowed_count }}</div>
+        <div class="stat-label">借用中</div>
+    </div>
+</div>
+
+<!-- 快捷操作 -->
+<div style="margin-bottom:16px;display:flex;gap:10px;justify-content:flex-end;">
+    <form method="POST" action="{{ url_for('import_summary') }}" enctype="multipart/form-data" style="display:inline-flex;gap:8px;align-items:center;">
+        <input type="file" name="file" accept=".xlsx,.xls" style="display:none;" id="importSummaryFile" onchange="this.form.submit();">
+        <button type="button" class="btn btn-secondary" onclick="document.getElementById('importSummaryFile').click()">📥 导入汇总表</button>
+    </form>
+    <a href="{{ url_for('export_summary') }}" class="btn btn-secondary">📊 导出汇总表</a>
+</div>
+
+<!-- 操作栏 -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">👥 人员列表 <span style="font-size:13px;color:#9ca3af;font-weight:normal;">（点击查看借用物品）</span></div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <div class="search-box">
+                <input type="text" id="personSearch" placeholder="🔍 搜索人员姓名/部门..." oninput="searchPersons()">
+            </div>
+            <button class="btn btn-secondary" onclick="openModal('addPersonModal')">+ 添加人员</button>
+            <button class="btn btn-secondary" onclick="openModal('addItemModal')">+ 添加物品</button>
+            <a href="{{ url_for('add_borrow') }}" class="btn btn-primary">+ 新增借用</a>
+        </div>
+    </div>
+
+    {% if persons|length == 0 %}
+    <div style="text-align:center;padding:60px 0;color:#9ca3af;">
+        <div style="font-size:48px;margin-bottom:16px;">📋</div>
+        <p>还没有添加人员</p>
+        <p style="font-size:13px;margin-top:8px;">点击上方「添加人员」开始使用</p>
+    </div>
+    {% else %}
+    <div id="deptContainer">
+        {% for dept in sorted_depts %}
+        <div class="dept-section" data-dept="{{ dept }}">
+            <div class="dept-header" onclick="toggleDept(this)">
+                <span class="dept-icon">🏢</span>
+                <span class="dept-title">{{ dept }}</span>
+                <span class="dept-count">{{ dept_groups[dept]|length }} 人</span>
+                <span class="dept-toggle">▶</span>
+            </div>
+            <div class="person-grid" style="display:none;">
+                {% for person in dept_groups[dept] %}
+                <div class="person-card" data-name="{{ person.name }}" data-dept="{{ dept }}">
+                    <div class="person-card-header" onclick="toggleCard(this)">
+                        {% if person.avatar %}
+                        <img src="{{ url_for('uploaded_file', filename=person.avatar) }}" class="person-avatar-img" alt="{{ person.name }}">
+                        {% else %}
+                        <div class="person-avatar">{{ person.name[:1] }}</div>
+                        {% endif %}
+                        <div class="person-info">
+                            <div class="person-name">{{ person.name }}</div>
+                            <div class="person-dept">
+                                {{ dept }}
+                                {% if person.phone %} · {{ person.phone }}{% endif %}
+                            </div>
+                        </div>
+                        <span class="person-badge">{{ person_borrows[person.id]|length }} 件</span>
+                        {% if person_borrows[person.id]|length > 0 %}
+                        <button class="btn btn-success btn-sm" style="padding:2px 8px;font-size:11px;margin-left:4px;"
+                                onclick="event.stopPropagation();batchReturnPerson({{ person.id }}, '{{ person.name }}', this)">
+                            一键归还
+                        </button>
+                        {% endif %}
+                        <span class="expand-icon">▶</span>
+                    </div>
+                    <div class="person-card-body">
+                        <div class="borrow-list">
+                            {% set borrows = person_borrows[person.id] %}
+                            {% if borrows|length == 0 %}
+                            <div class="empty-state">暂无借用物品</div>
+                            {% else %}
+                            {% for borrow in borrows %}
+                            <div class="borrow-item">
+                                {% if borrow.asset_image %}
+                                <img src="{{ url_for('uploaded_file', filename=borrow.asset_image) }}" class="borrow-item-img" alt="{{ borrow.item_name }}">
+                                {% elif borrow.item_image %}
+                                <img src="{{ url_for('uploaded_file', filename=borrow.item_image) }}" class="borrow-item-img" alt="{{ borrow.item_name }}">
+                                {% else %}
+                                <div class="borrow-item-img-placeholder">📦</div>
+                                {% endif %}
+                                <div class="borrow-item-info">
+                                    <div class="borrow-item-name">
+                                        {{ borrow.item_name }}
+                                        {% if borrow.asset_no %}
+                                        <span style="color:#667eea;font-size:11px;font-family:monospace;background:#eef2ff;padding:1px 6px;border-radius:4px;">{{ borrow.asset_no }}</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if borrow.model or borrow.serial %}
+                                    <div style="font-size:12px;color:#6b7280;margin-top:2px;">
+                                        {% if borrow.model %}{{ borrow.model }}{% endif %}
+                                        {% if borrow.serial %}<span style="font-family:monospace;"> · {{ borrow.serial }}</span>{% endif %}
+                                    </div>
+                                    {% endif %}
+                                    <div class="borrow-item-meta">
+                                        <span>📅 借用: {{ borrow.borrow_date }}</span>
+                                        {% if borrow.expected_return_date %}
+                                        <span>⏰ 预计还: {{ borrow.expected_return_date }}</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if borrow.note %}
+                                    <div style="font-size:12px;color:#9ca3af;margin-top:4px;">📝 {{ borrow.note }}</div>
+                                    {% endif %}
+                                </div>
+                                <div class="borrow-item-actions">
+                                    <button class="btn btn-secondary btn-sm" onclick="editBorrow({{ borrow.id }}, '{{ borrow.expected_return_date or '' }}', '{{ borrow.note or '' }}')">编辑</button>
+                                    <form method="POST" action="{{ url_for('return_borrow', bid=borrow.id) }}"
+                                          onsubmit="return confirm('确认归还 {{ borrow.item_name }}{% if borrow.asset_no %}（{{ borrow.asset_no }}）{% endif %}？');">
+                                        <input type="hidden" name="return_date" value="">
+                                        <button type="submit" class="btn btn-success btn-sm">归还</button>
+                                    </form>
+                                </div>
+                            </div>
+                            {% endfor %}
+                            {% endif %}
+                        </div>
+                <div style="padding:12px 20px;border-top:1px solid #f0f0f0;text-align:right;">
+                    <a href="{{ url_for('add_borrow', person_id=person.id) }}" class="btn btn-primary btn-sm">+ 新增借用</a>
+                </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- 添加人员模态框 -->
+<div class="modal-overlay" id="addPersonModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">➕ 添加人员</div>
+            <button class="modal-close" onclick="closeModal('addPersonModal')">&times;</button>
+        </div>
+        <form method="POST" action="{{ url_for('add_person') }}" enctype="multipart/form-data">
+            <div class="form-group" style="text-align:center;">
+                <div class="avatar-upload" onclick="document.getElementById('indexAvatarInput').click()">
+                    <div class="avatar-preview" id="indexAvatarPreview">
+                        <span>📷 点击上传头像</span>
+                    </div>
+                </div>
+                <input type="file" name="avatar" id="indexAvatarInput" accept="image/*" capture="user" style="display:none;" onchange="previewAvatar(this, 'indexAvatarPreview')">
+                <div style="font-size:12px;color:#9ca3af;margin-top:8px;">支持拍照或上传图片</div>
+            </div>
+            <div class="form-group">
+                <label>姓名 <span style="color:#ef4444;">*</span></label>
+                <input type="text" name="name" required placeholder="请输入姓名">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>部门</label>
+                    <input type="text" name="department" placeholder="例如：技术部">
+                </div>
+                <div class="form-group">
+                    <label>电话</label>
+                    <input type="text" name="phone" placeholder="联系电话">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea name="note" rows="2" placeholder="可选"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addPersonModal')">取消</button>
+                <button type="submit" class="btn btn-primary">添加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 添加物品模态框 -->
+<div class="modal-overlay" id="addItemModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">➕ 添加物品</div>
+            <button class="modal-close" onclick="closeModal('addItemModal')">&times;</button>
+        </div>
+        <form method="POST" action="{{ url_for('add_item') }}" enctype="multipart/form-data">
+            <div class="form-group" style="text-align:center;">
+                <div class="image-upload" onclick="document.getElementById('indexImageInput').click()">
+                    <div class="image-preview" id="indexImagePreview">
+                        <span>📷 点击拍照/上传图片</span>
+                    </div>
+                </div>
+                <input type="file" name="image" id="indexImageInput" accept="image/*" capture="environment" style="display:none;" onchange="previewImage(this, 'indexImagePreview')">
+                <div style="font-size:12px;color:#9ca3af;margin-top:8px;">支持拍照或从相册选择</div>
+            </div>
+            <div class="form-group">
+                <label>物品名称 <span style="color:#ef4444;">*</span></label>
+                <input type="text" name="name" required placeholder="例如：笔记本电脑">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>分类</label>
+                    <input type="text" name="category" placeholder="例如：电子设备">
+                </div>
+                <div class="form-group">
+                    <label>型号/规格</label>
+                    <input type="text" name="model" placeholder="型号信息">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>序列号</label>
+                    <input type="text" name="serial" placeholder="序列号/编号">
+                </div>
+                <div class="form-group">
+                    <label>数量 <span style="color:#ef4444;">*</span></label>
+                    <input type="number" name="total_count" value="1" min="1">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea name="note" rows="2" placeholder="可选"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addItemModal')">取消</button>
+                <button type="submit" class="btn btn-primary">添加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 编辑借用记录模态框 -->
+<div class="modal-overlay" id="editBorrowModal">
+    <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+            <div class="modal-title">✏️ 编辑借用</div>
+            <button class="modal-close" onclick="closeModal('editBorrowModal')">&times;</button>
+        </div>
+        <form method="POST" id="editBorrowForm" action="">
+            <div class="form-group">
+                <label>预计归还日期</label>
+                <input type="date" name="expected_return_date" id="editBorrowReturnDate">
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea name="note" id="editBorrowNote" rows="3" placeholder="可选"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editBorrowModal')">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ===== 一键归还某个人的全部借用 =====
+function batchReturnPerson(personId, personName, btn) {
+    if (!confirm('确定一键归还 ' + personName + ' 的所有借用中物品？')) return;
+    btn.disabled = true;
+    btn.textContent = '归还中...';
+    fetch('/borrows/batch_return_by_person/' + personId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    }).then(function(r) { return r.json(); })
+      .then(function(data) {
+          alert(data.msg || ('完成：' + (data.success || 0) + ' 件'));
+          location.reload();
+      }).catch(function(err) {
+          alert('请求失败：' + err);
+          btn.disabled = false;
+          btn.textContent = '一键归还';
+      });
+}
+
+function previewAvatar(input, previewId) {
+    var preview = document.getElementById(previewId);
+    if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = '<img src="' + e.target.result + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
+        }
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function previewImage(input, previewId) {
+    var preview = document.getElementById(previewId);
+    if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = '<img src="' + e.target.result + '" style="max-width:100%;max-height:100%;object-fit:contain;">';
+        }
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function searchPersons() {
+    var keyword = document.getElementById('personSearch').value.toLowerCase().trim();
+    var deptSections = document.querySelectorAll('.dept-section');
+
+    deptSections.forEach(function(section) {
+        var cards = section.querySelectorAll('.person-card');
+        var visibleCount = 0;
+        cards.forEach(function(card) {
+            var name = card.getAttribute('data-name').toLowerCase();
+            var dept = card.getAttribute('data-dept').toLowerCase();
+            if (name.indexOf(keyword) > -1 || dept.indexOf(keyword) > -1) {
+                card.style.display = '';
+                visibleCount++;
+            } else {
+                card.style.display = 'none';
+            }
+        });
+        // 部门里没人匹配就隐藏整个部门
+        section.style.display = visibleCount > 0 ? '' : 'none';
+    });
+}
+
+function toggleDept(header) {
+    var section = header.closest('.dept-section');
+    var grid = section.querySelector('.person-grid');
+    var toggle = header.querySelector('.dept-toggle');
+
+    if (grid.style.display === 'none') {
+        grid.style.display = '';
+        toggle.textContent = '▼';
+        toggle.style.transform = 'rotate(0deg)';
+    } else {
+        grid.style.display = 'none';
+        toggle.textContent = '▶';
+        toggle.style.transform = 'rotate(0deg)';
+    }
+}
+
+function editBorrow(id, returnDate, note) {
+    document.getElementById('editBorrowForm').action = '/borrow/' + id + '/edit';
+    document.getElementById('editBorrowReturnDate').value = returnDate || '';
+    document.getElementById('editBorrowNote').value = note || '';
+    openModal('editBorrowModal');
+}
+</script>
+{% endblock %}

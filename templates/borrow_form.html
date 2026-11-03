@@ -1,0 +1,291 @@
+{% extends 'base.html' %}
+{% block title %}新增借用 - 物品使用登记系统{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:680px;margin:0 auto;">
+    <div class="card-header">
+        <div class="card-title">📝 新增借用登记</div>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">返回</a>
+    </div>
+
+    <form method="POST" action="{{ url_for('add_borrow') }}" id="borrowForm">
+        <div class="form-group">
+            <label>借用人员 <span style="color:#ef4444;">*</span></label>
+            <div class="searchable-select" id="personSelectWrap">
+                <div class="ss-display" onclick="toggleSearchSelect('person')">
+                    <span class="ss-placeholder" id="personDisplay">请选择人员</span>
+                    <span class="ss-arrow">▼</span>
+                </div>
+                <div class="ss-dropdown" id="personDropdown">
+                    <div class="ss-search">
+                        <input type="text" id="personSearchInput" placeholder="🔍 搜索人员..." oninput="filterOptions('person')">
+                    </div>
+                    <div class="ss-options" id="personOptions">
+                        {% for person in persons %}
+                        <div class="ss-option" data-value="{{ person.id }}" data-search="{{ person.name }} {{ person.department or '' }}" onclick="selectPerson({{ person.id }}, '{{ person.name }}{% if person.department %}（{{ person.department }}）{% endif %}')">
+                            {% if person.avatar %}
+                            <img src="{{ url_for('uploaded_file', filename=person.avatar) }}" class="ss-option-avatar" alt="">
+                            {% else %}
+                            <div class="ss-option-avatar-default">{{ person.name[:1] }}</div>
+                            {% endif %}
+                            <div class="ss-option-text">
+                                <div class="ss-option-name">{{ person.name }}</div>
+                                {% if person.department %}
+                                <div class="ss-option-sub">{{ person.department }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <input type="hidden" name="person_id" id="personIdInput" value="">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>借用资产 <span style="color:#ef4444;">*</span> <span style="color:#9ca3af;font-size:12px;font-weight:normal;">（可多选，点击勾选）</span></label>
+
+            <!-- 已选资产 -->
+            <div id="selectedAssets" class="selected-items">
+                <div class="selected-empty">还未选择资产，点击下方物品展开后勾选</div>
+            </div>
+
+            <!-- 资产选择（按物品分组） -->
+            <div class="asset-picker">
+                <div class="asset-picker-search">
+                    <input type="text" id="assetSearchInput" placeholder="🔍 搜索物品名称/资产编号..." oninput="filterAssetPicker()">
+                </div>
+                <div class="asset-picker-list" id="assetPickerList">
+                    {% for group in item_groups %}
+                    <div class="ap-item-group" data-search="{{ group.item_name }} {{ group.item_category or '' }} {{ group.item_model or '' }}">
+                        <div class="ap-item-header" onclick="toggleApItemGroup(this)">
+                            <span class="ap-item-arrow">▶</span>
+                            <span class="ap-item-name">{{ group.item_name }}</span>
+                            <span class="ap-item-sub">
+                                {% if group.item_category %}{{ group.item_category }}{% endif %}
+                                {% if group.item_model %} · {{ group.item_model }}{% endif %}
+                            </span>
+                            <span class="ap-item-count">{{ group.assets|length }} 件可用</span>
+                        </div>
+                        <div class="ap-asset-list" style="display:none;">
+                            {% for asset in group.assets %}
+                            <label class="ap-asset-item" data-search="{{ asset.asset_no }} {{ asset.model or '' }} {{ asset.serial or '' }}">
+                                <input type="checkbox" class="ap-asset-check" value="{{ asset.id }}" onchange="toggleAssetSelect({{ asset.id }}, '{{ asset.asset_no }}', '{{ group.item_name }}', this.checked)">
+                                <div class="ap-asset-info">
+                                    {% if asset.image %}
+                                    <img src="{{ url_for('uploaded_file', filename=asset.image) }}" class="ap-asset-img" alt="">
+                                    {% else %}
+                                    <div class="ap-asset-img-default">📱</div>
+                                    {% endif %}
+                                    <div>
+                                        <div class="ap-asset-no">{{ asset.asset_no }}</div>
+                                        <div class="ap-asset-item-name">{{ group.item_name }}</div>
+                                        {% if asset.model or asset.serial %}
+                                        <div class="ap-asset-meta">
+                                            {% if asset.model %}<span>{{ asset.model }}</span>{% endif %}
+                                            {% if asset.serial %}<span style="font-family:monospace;">{{ asset.serial }}</span>{% endif %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% if item_groups|length == 0 %}
+                    <div style="text-align:center;padding:30px;color:#9ca3af;font-size:13px;">暂无可用资产</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>借用日期 <span style="color:#9ca3af;font-size:12px;font-weight:normal;">（默认今天）</span></label>
+                <input type="date" name="borrow_date" value="{{ today }}">
+            </div>
+            <div class="form-group">
+                <label>预计归还日期</label>
+                <input type="date" name="expected_return_date">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>备注</label>
+            <textarea name="note" rows="2" placeholder="借用用途等说明（可选）"></textarea>
+        </div>
+
+        <div class="form-actions">
+            <a href="{{ url_for('index') }}" class="btn btn-secondary">取消</a>
+            <button type="submit" class="btn btn-primary" onclick="return validateBorrowForm()">确认登记</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var selectedAssets = [];
+
+// ===== 人员选择 =====
+var activeDropdown = null;
+
+function toggleSearchSelect(type) {
+    var dropdown = document.getElementById(type + 'Dropdown');
+    var searchInput = document.getElementById(type + 'SearchInput');
+    if (activeDropdown && activeDropdown !== dropdown) {
+        activeDropdown.style.display = 'none';
+    }
+    if (dropdown.style.display === 'block') {
+        dropdown.style.display = 'none';
+        activeDropdown = null;
+    } else {
+        dropdown.style.display = 'block';
+        activeDropdown = dropdown;
+        setTimeout(function() { searchInput.focus(); }, 50);
+    }
+}
+
+function filterOptions(type) {
+    var keyword = document.getElementById(type + 'SearchInput').value.toLowerCase().trim();
+    var options = document.querySelectorAll('#' + type + 'Options .ss-option');
+    options.forEach(function(opt) {
+        var searchText = opt.getAttribute('data-search').toLowerCase();
+        opt.style.display = searchText.indexOf(keyword) > -1 ? '' : 'none';
+    });
+}
+
+function selectPerson(id, displayText) {
+    document.getElementById('personIdInput').value = id;
+    var displayEl = document.getElementById('personDisplay');
+    displayEl.textContent = displayText;
+    displayEl.classList.remove('ss-placeholder');
+    displayEl.classList.add('ss-selected');
+    document.getElementById('personDropdown').style.display = 'none';
+    activeDropdown = null;
+}
+
+// ===== 资产选择 =====
+function toggleApItemGroup(header) {
+    var list = header.nextElementSibling;
+    var arrow = header.querySelector('.ap-item-arrow');
+    if (list.style.display === 'none') {
+        list.style.display = '';
+        arrow.textContent = '▼';
+    } else {
+        list.style.display = 'none';
+        arrow.textContent = '▶';
+    }
+}
+
+function toggleAssetSelect(assetId, assetNo, itemName, checked) {
+    if (checked) {
+        selectedAssets.push({ id: assetId, asset_no: assetNo, item_name: itemName });
+    } else {
+        selectedAssets = selectedAssets.filter(function(a) { return a.id !== assetId; });
+    }
+    renderSelectedAssets();
+}
+
+function renderSelectedAssets() {
+    var container = document.getElementById('selectedAssets');
+
+    if (selectedAssets.length === 0) {
+        container.innerHTML = '<div class="selected-empty">还未选择资产，点击下方物品展开后勾选</div>';
+        return;
+    }
+
+    var html = '';
+    selectedAssets.forEach(function(a) {
+        html += '<div class="selected-item">';
+        html += '<div class="si-img-default">📱</div>';
+        html += '<div class="si-info">';
+        html += '<div class="si-name">' + a.asset_no + '</div>';
+        html += '<div class="si-sub">' + a.item_name + '</div>';
+        html += '</div>';
+        html += '<button type="button" class="si-remove" onclick="removeAssetSelect(' + a.id + ')">×</button>';
+        html += '</div>';
+        html += '<input type="hidden" name="asset_ids" value="' + a.id + '">';
+    });
+
+    container.innerHTML = html;
+}
+
+function removeAssetSelect(assetId) {
+    // 取消勾选
+    var checkbox = document.querySelector('.ap-asset-check[value="' + assetId + '"]');
+    if (checkbox) checkbox.checked = false;
+
+    selectedAssets = selectedAssets.filter(function(a) { return a.id !== assetId; });
+    renderSelectedAssets();
+}
+
+function filterAssetPicker() {
+    var keyword = document.getElementById('assetSearchInput').value.toLowerCase().trim();
+    var groups = document.querySelectorAll('.ap-item-group');
+
+    groups.forEach(function(group) {
+        var groupText = group.getAttribute('data-search').toLowerCase();
+        var assets = group.querySelectorAll('.ap-asset-item');
+        var visibleAssetCount = 0;
+
+        assets.forEach(function(asset) {
+            var assetText = asset.getAttribute('data-search').toLowerCase();
+            if (assetText.indexOf(keyword) > -1 || groupText.indexOf(keyword) > -1) {
+                asset.style.display = '';
+                visibleAssetCount++;
+            } else {
+                asset.style.display = 'none';
+            }
+        });
+
+        // 如果搜索关键字匹配物品名，自动展开
+        var assetList = group.querySelector('.ap-asset-list');
+        var arrow = group.querySelector('.ap-item-arrow');
+        if (keyword && (groupText.indexOf(keyword) > -1 || visibleAssetCount > 0)) {
+            assetList.style.display = '';
+            arrow.textContent = '▼';
+        }
+
+        group.style.display = (groupText.indexOf(keyword) > -1 || visibleAssetCount > 0) ? '' : 'none';
+    });
+}
+
+// 点击其他地方关闭人员下拉
+document.addEventListener('click', function(e) {
+    if (activeDropdown && !e.target.closest('.searchable-select')) {
+        activeDropdown.style.display = 'none';
+        activeDropdown = null;
+    }
+});
+
+// 表单验证
+function validateBorrowForm() {
+    var personId = document.getElementById('personIdInput').value;
+    if (!personId) {
+        alert('请选择借用人员');
+        return false;
+    }
+    if (selectedAssets.length === 0) {
+        alert('请至少选择一件资产');
+        return false;
+    }
+    return true;
+}
+
+// 如果有预选人员，自动选中
+{% if pre_person and pre_person > 0 %}
+document.addEventListener('DOMContentLoaded', function() {
+    var preOption = document.querySelector('#personOptions .ss-option[data-value="{{ pre_person }}"]');
+    if (preOption) {
+        var value = preOption.getAttribute('data-value');
+        var name = preOption.querySelector('.ss-option-name').textContent;
+        var sub = preOption.querySelector('.ss-option-sub');
+        var displayText = name + (sub ? '（' + sub.textContent + '）' : '');
+        selectPerson(value, displayText);
+    }
+});
+{% endif %}
+</script>
+{% endblock %}

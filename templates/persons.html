@@ -1,0 +1,217 @@
+{% extends 'base.html' %}
+{% block title %}人员管理 - 物品使用登记系统{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">👥 人员管理</div>
+        <div style="display:flex;gap:10px;">
+            <form method="POST" action="{{ url_for('import_persons') }}" enctype="multipart/form-data" style="display:inline-flex;gap:8px;align-items:center;">
+                <input type="file" name="file" accept=".xlsx,.xls" style="display:none;" id="importPersonFile" onchange="this.form.submit();">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('importPersonFile').click()">📥 导入</button>
+            </form>
+            <a href="{{ url_for('export_persons') }}" class="btn btn-secondary">📤 导出</a>
+            <button class="btn btn-primary" onclick="openModal('addPersonModal')">+ 添加人员</button>
+        </div>
+    </div>
+
+    {% if persons|length == 0 %}
+    <div style="text-align:center;padding:60px 0;color:#9ca3af;">
+        <div style="font-size:48px;margin-bottom:16px;">👥</div>
+        <p>还没有添加人员</p>
+        <p style="font-size:13px;margin-top:8px;">点击上方按钮添加第一个人员</p>
+    </div>
+    {% else %}
+    <div class="dept-table-container">
+        {% for dept in sorted_depts %}
+        <div class="dept-table-section">
+            <div class="dept-table-header" onclick="toggleDeptTable(this)">
+                <span class="dept-toggle-icon">▶</span>
+                <span class="dept-table-icon">🏢</span>
+                <span class="dept-table-title">{{ dept }}</span>
+                <span class="dept-table-count">{{ dept_groups[dept]|length }} 人</span>
+            </div>
+            <table class="table dept-table-body" style="display:none;">
+                <thead>
+                    <tr>
+                        <th style="width:60px;">头像</th>
+                        <th>姓名</th>
+                        <th>部门</th>
+                        <th>电话</th>
+                        <th>备注</th>
+                        <th>添加时间</th>
+                        <th style="width:160px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for person in dept_groups[dept] %}
+                    <tr>
+                        <td>
+                            {% if person.avatar %}
+                            <img src="{{ url_for('uploaded_file', filename=person.avatar) }}" class="table-avatar" alt="{{ person.name }}">
+                            {% else %}
+                            <div class="table-avatar-default">{{ person.name[:1] }}</div>
+                            {% endif %}
+                        </td>
+                        <td style="font-weight:500;">{{ person.name }}</td>
+                        <td>{{ person.department or '-' }}</td>
+                        <td>{{ person.phone or '-' }}</td>
+                        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ person.note or '-' }}</td>
+                        <td>{{ person.created_at }}</td>
+                        <td>
+                            <div class="table-actions">
+                                <button class="btn btn-secondary btn-sm" onclick="editPerson({{ person.id }}, '{{ person.name }}', '{{ person.department or '' }}', '{{ person.phone or '' }}', '{{ person.note or '' }}', '{{ person.avatar or '' }}')">编辑</button>
+                                <form method="POST" action="{{ url_for('delete_person', pid=person.id) }}"
+                                      onsubmit="return confirm('确定删除「{{ person.name }}」吗？\n该人员的历史借用记录也会被删除。');">
+                                    <button type="submit" class="btn btn-danger btn-sm">删除</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- 添加人员模态框 -->
+<div class="modal-overlay" id="addPersonModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">➕ 添加人员</div>
+            <button class="modal-close" onclick="closeModal('addPersonModal')">&times;</button>
+        </div>
+        <form method="POST" action="{{ url_for('add_person') }}" enctype="multipart/form-data">
+            <div class="form-group" style="text-align:center;">
+                <div class="avatar-upload" onclick="document.getElementById('addAvatarInput').click()">
+                    <div class="avatar-preview" id="addAvatarPreview">
+                        <span>📷 点击上传头像</span>
+                    </div>
+                </div>
+                <input type="file" name="avatar" id="addAvatarInput" accept="image/*" capture="user" style="display:none;" onchange="previewAvatar(this, 'addAvatarPreview')">
+                <div style="font-size:12px;color:#9ca3af;margin-top:8px;">支持拍照或上传图片</div>
+            </div>
+            <div class="form-group">
+                <label>姓名 <span style="color:#ef4444;">*</span></label>
+                <input type="text" name="name" required placeholder="请输入姓名">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>部门</label>
+                    <input type="text" name="department" placeholder="例如：技术部">
+                </div>
+                <div class="form-group">
+                    <label>电话</label>
+                    <input type="text" name="phone" placeholder="联系电话">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea name="note" rows="2" placeholder="可选"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addPersonModal')">取消</button>
+                <button type="submit" class="btn btn-primary">添加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 编辑人员模态框 -->
+<div class="modal-overlay" id="editPersonModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">✏️ 编辑人员</div>
+            <button class="modal-close" onclick="closeModal('editPersonModal')">&times;</button>
+        </div>
+        <form method="POST" id="editPersonForm" action="" enctype="multipart/form-data">
+            <div class="form-group" style="text-align:center;">
+                <div class="avatar-upload" onclick="document.getElementById('editAvatarInput').click()">
+                    <div class="avatar-preview" id="editAvatarPreview">
+                        <span>📷 点击更换头像</span>
+                    </div>
+                </div>
+                <input type="file" name="avatar" id="editAvatarInput" accept="image/*" capture="user" style="display:none;" onchange="previewAvatar(this, 'editAvatarPreview')">
+                <div style="margin-top:8px;">
+                    <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#ef4444;">
+                        <input type="checkbox" name="delete_avatar" value="1" id="editDeleteAvatar">
+                        删除当前头像
+                    </label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>姓名 <span style="color:#ef4444;">*</span></label>
+                <input type="text" name="name" id="editPersonName" required>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>部门</label>
+                    <input type="text" name="department" id="editPersonDept">
+                </div>
+                <div class="form-group">
+                    <label>电话</label>
+                    <input type="text" name="phone" id="editPersonPhone">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea name="note" id="editPersonNote" rows="2"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editPersonModal')">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function editPerson(id, name, dept, phone, note, avatar) {
+    document.getElementById('editPersonForm').action = '/person/' + id + '/edit';
+    document.getElementById('editPersonName').value = name;
+    document.getElementById('editPersonDept').value = dept;
+    document.getElementById('editPersonPhone').value = phone;
+    document.getElementById('editPersonNote').value = note;
+    document.getElementById('editDeleteAvatar').checked = false;
+
+    var preview = document.getElementById('editAvatarPreview');
+    if (avatar) {
+        preview.innerHTML = '<img src="/uploads/' + avatar + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
+    } else {
+        preview.innerHTML = '<span>📷 点击更换头像</span>';
+    }
+
+    openModal('editPersonModal');
+}
+
+function previewAvatar(input, previewId) {
+    var preview = document.getElementById(previewId);
+    if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = '<img src="' + e.target.result + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
+        }
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function toggleDeptTable(header) {
+    var section = header.closest('.dept-table-section');
+    var table = section.querySelector('.dept-table-body');
+    var toggle = header.querySelector('.dept-toggle-icon');
+
+    if (table.style.display === 'none') {
+        table.style.display = '';
+        toggle.textContent = '▼';
+    } else {
+        table.style.display = 'none';
+        toggle.textContent = '▶';
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 数据（Docker/data dir 里的敏感数据绝不进 git）
+data/
+*.db
+*.db.bak*
+*.db.bak-*
+
+# 上传文件
+uploads/
+
+# 编辑器
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+
+# 打包产物（本地可能有 zip 归档）
+*.zip
+*.tar.gz

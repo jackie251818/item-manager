@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+{% block title %}借用记录 - 物品使用登记系统{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">📋 借用记录</div>
+        <div style="display:flex;gap:10px;">
+            <button type="button" class="btn btn-success" id="batchReturnBtn" onclick="batchReturn()" disabled title="请先勾选要归还的记录">
+                ✅ 批量归还 <span id="batchCount"></span>
+            </button>
+            <a href="{{ url_for('export_records') }}" class="btn btn-secondary">📤 导出 Excel</a>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <a href="{{ url_for('records', status='all') }}" class="tab-item {% if status == 'all' %}active{% endif %}">全部 ({{ counts.all }})</a>
+        <a href="{{ url_for('records', status='borrowed') }}" class="tab-item {% if status == 'borrowed' %}active{% endif %}">借用中 ({{ counts.borrowed }})</a>
+        <a href="{{ url_for('records', status='returned') }}" class="tab-item {% if status == 'returned' %}active{% endif %}">已归还 ({{ counts.returned }})</a>
+        <a href="{{ url_for('records', status='overdue') }}" class="tab-item {% if status == 'overdue' %}active{% endif %}" style="color:#dc2626;">⚠️ 逾期 ({{ counts.overdue }})</a>
+    </div>
+
+    <!-- 搜索框 -->
+    <form method="GET" action="{{ url_for('records') }}" style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+        {% if status != 'all' %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+        <input type="text" name="q" value="{{ search }}" placeholder="🔍 搜索 姓名/物品/资产编号/备注"
+               style="flex:1;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+        <button type="submit" class="btn btn-primary">搜索</button>
+        {% if search %}<a href="{{ url_for('records', status=status if status != 'all' else 'all') }}" class="btn btn-secondary">清除</a>{% endif %}
+    </form>
+
+    {% if borrows|length == 0 %}
+    <div style="text-align:center;padding:60px 0;color:#9ca3af;">
+        <div style="font-size:48px;margin-bottom:16px;">📋</div>
+        <p>暂无记录</p>
+    </div>
+    {% else %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th style="width:40px;">
+                    <input type="checkbox" id="selectAll" onchange="toggleAll(this)" title="全选当前页借用中">
+                </th>
+                <th style="width:50px;">照片</th>
+                <th>借用人员</th>
+                <th>物品</th>
+                <th>资产编号</th>
+                <th>型号/序列号</th>
+                <th>借用日期</th>
+                <th>预计归还</th>
+                <th>实际归还</th>
+                <th>状态</th>
+                <th style="width:140px;">操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for borrow in borrows %}
+            <tr {% if borrow.id in overdue_ids %}style="background:#fef2f2;border-left:3px solid #dc2626;"{% endif %}>
+                <td>
+                    {% if borrow.status == 'borrowed' %}
+                    <input type="checkbox" class="borrow-cb" value="{{ borrow.id }}" onchange="updateBatchBtn()">
+                    {% endif %}
+                </td>
+                <td>
+                    {% if borrow.asset_image %}
+                    <img src="{{ url_for('uploaded_file', filename=borrow.asset_image) }}" class="table-item-img" alt="{{ borrow.item_name }}">
+                    {% elif borrow.item_image %}
+                    <img src="{{ url_for('uploaded_file', filename=borrow.item_image) }}" class="table-item-img" alt="{{ borrow.item_name }}">
+                    {% else %}
+                    <div class="table-item-img-default">📦</div>
+                    {% endif %}
+                </td>
+                <td style="font-weight:500;">{{ borrow.person_name }}</td>
+                <td>
+                    {{ borrow.item_name }}
+                    {% if borrow.item_category %}
+                    <span style="color:#9ca3af;font-size:12px;">[{{ borrow.item_category }}]</span>
+                    {% endif %}
+                </td>
+                <td style="font-family:monospace;">{{ borrow.asset_no or '-' }}</td>
+                <td style="font-size:13px;">
+                    {% if borrow.model %}
+                    {{ borrow.model }}
+                    {% endif %}
+                    {% if borrow.serial %}
+                    <span style="font-family:monospace;color:#6b7280;">({{ borrow.serial }})</span>
+                    {% endif %}
+                    {% if not borrow.model and not borrow.serial %}-{% endif %}
+                </td>
+                <td>{{ borrow.borrow_date }}</td>
+                <td>
+                    {% if borrow.expected_return_date %}
+                        {% if borrow.id in overdue_ids %}
+                        <span style="color:#dc2626;font-weight:600;">{{ borrow.expected_return_date }}</span>
+                        {% else %}
+                        {{ borrow.expected_return_date }}
+                        {% endif %}
+                    {% else %}-{% endif %}
+                </td>
+                <td>{{ borrow.actual_return_date or '-' }}</td>
+                <td>
+                    {% if borrow.status == 'borrowed' %}
+                        {% if borrow.id in overdue_ids %}
+                        <span class="status-badge" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;">⚠️ 逾期</span>
+                        {% else %}
+                        <span class="status-badge status-borrowed">借用中</span>
+                        {% endif %}
+                    {% else %}
+                    <span class="status-badge status-returned">已归还</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="table-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="editBorrow({{ borrow.id }}, '{{ borrow.expected_return_date or '' }}', '{{ borrow.note or '' }}')">编辑</button>
+                        {% if borrow.status == 'borrowed' %}
+                        <form method="POST" action="{{ url_for('return_borrow', bid=borrow.id) }}"
+                              onsubmit="return confirm('确认归还吗？');">
+                            <button type="submit" class="btn btn-success btn-sm">归还</button>
+                        </form>
+                        {% endif %}
+                        <form method="POST" action="{{ url_for('delete_borrow', bid=borrow.id) }}"
+                              onsubmit="return confirm('确定删除此记录吗？');">
+                            <button type="submit" class="btn btn-danger btn-sm">删除</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- 分页控件 -->
+    {% if total_pages > 1 %}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding:12px 0;border-top:1px solid #f3f4f6;">
+        <div style="color:#6b7280;font-size:13px;">
+            共 {{ total }} 条 · 第 {{ page }} / {{ total_pages }} 页
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+            {% set sep = '?' if status == 'all' else '?' %}
+            {% set base_paged = url_for('records', status=status, page='PAGE_PLACEHOLDER') %}
+            {% set base_paged = base_paged.replace('PAGE_PLACEHOLDER', '__P__') %}
+            {% if page > 1 %}
+            <a href="{{ url_for('records', status=status, page=page-1) }}" class="btn btn-secondary btn-sm">← 上一页</a>
+            {% endif %}
+
+            {% set ns = namespace(nums=[]) %}
+            {% for p in range(1, total_pages+1) %}
+                {% if p == 1 or p == total_pages or (p >= page-2 and p <= page+2) %}
+                    {% set _ = ns.nums.append(p) %}
+                {% elif ns.nums and ns.nums[-1] != '...' %}
+                    {% set _ = ns.nums.append('...') %}
+                {% endif %}
+            {% endfor %}
+
+            {% for p in ns.nums %}
+                {% if p == '...' %}
+                <span style="color:#9ca3af;padding:0 4px;">...</span>
+                {% elif p == page %}
+                <span class="btn btn-primary btn-sm" style="cursor:default;">{{ p }}</span>
+                {% else %}
+                <a href="{{ url_for('records', status=status, page=p) }}" class="btn btn-secondary btn-sm">{{ p }}</a>
+                {% endif %}
+            {% endfor %}
+
+            {% if page < total_pages %}
+            <a href="{{ url_for('records', status=status, page=page+1) }}" class="btn btn-secondary btn-sm">下一页 →</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% endif %}
+</div>
+
+<!-- 编辑借用记录模态框 -->
+<div class="modal-overlay" id="editBorrowModal">
+    <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+            <div class="modal-title">✏️ 编辑借用记录</div>
+            <button class="modal-close" onclick="closeModal('editBorrowModal')">&times;</button>
+        </div>
+        <form method="POST" id="editBorrowForm" action="">
+            <div class="form-group">
+                <label>预计归还日期</label>
+                <input type="date" name="expected_return_date" id="editBorrowReturnDate">
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea name="note" id="editBorrowNote" rows="3" placeholder="可选"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editBorrowModal')">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function editBorrow(id, returnDate, note) {
+    document.getElementById('editBorrowForm').action = '/borrow/' + id + '/edit';
+    document.getElementById('editBorrowReturnDate').value = returnDate || '';
+    document.getElementById('editBorrowNote').value = note || '';
+    openModal('editBorrowModal');
+}
+
+// ===== 批量归还 =====
+function toggleAll(selectAll) {
+    document.querySelectorAll('.borrow-cb').forEach(function(cb) {
+        cb.checked = selectAll.checked;
+    });
+    updateBatchBtn();
+}
+
+function updateBatchBtn() {
+    var checked = document.querySelectorAll('.borrow-cb:checked');
+    var btn = document.getElementById('batchReturnBtn');
+    var cnt = document.getElementById('batchCount');
+    if (checked.length > 0) {
+        btn.disabled = false;
+        btn.title = '点击归还选中的 ' + checked.length + ' 条记录';
+    } else {
+        btn.disabled = true;
+        btn.title = '请先勾选要归还的记录';
+    }
+    cnt.textContent = checked.length ? '(' + checked.length + ')' : '';
+    // 全选框状态同步
+    var allCb = document.querySelectorAll('.borrow-cb');
+    var allSel = document.getElementById('selectAll');
+    if (allSel && allCb.length > 0) {
+        allSel.checked = (checked.length === allCb.length);
+    }
+}
+
+function batchReturn() {
+    var checked = document.querySelectorAll('.borrow-cb:checked');
+    if (checked.length === 0) return;
+    var ids = Array.from(checked).map(function(c) { return parseInt(c.value, 10); });
+    if (!confirm('确定批量归还选中的 ' + ids.length + ' 条记录吗？')) return;
+
+    var btn = document.getElementById('batchReturnBtn');
+    btn.disabled = true;
+    btn.textContent = '处理中...';
+
+    fetch('/borrows/batch_return', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: ids })
+    }).then(function(r) { return r.json(); })
+      .then(function(data) {
+          alert(data.msg || ('完成：' + (data.success || 0) + ' 条'));
+          location.reload();
+      }).catch(function(err) {
+          alert('请求失败：' + err);
+          btn.disabled = false;
+          btn.innerHTML = '✅ 批量归还 <span id="batchCount"></span>';
+      });
+}
+</script>
+{% endblock %}

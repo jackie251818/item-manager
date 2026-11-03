@@ -1,0 +1,17 @@
+services:
+  item-manager:
+    image: ghcr.io/<your-name>/item-manager:latest
+    container_name: item-manager
+    restart: unless-stopped
+    ports:
+      - "8080:5000"       # 改前端口即可（左边宿主机 : 右边容器）
+    volumes:
+      - ./data:/app/data  # 数据持久化（DB + 上传图片 + 日志）
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/login')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

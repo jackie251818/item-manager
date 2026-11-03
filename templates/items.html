@@ -1,0 +1,417 @@
+{% extends 'base.html' %}
+{% block title %}物品管理 - 物品使用登记系统{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">📦 物品管理</div>
+        <div style="display:flex;gap:10px;">
+            <form method="POST" action="{{ url_for('import_items') }}" enctype="multipart/form-data" style="display:inline-flex;gap:8px;align-items:center;">
+                <input type="file" name="file" accept=".xlsx,.xls" style="display:none;" id="importItemFile" onchange="this.form.submit();">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('importItemFile').click()">📥 导入</button>
+            </form>
+            <a href="{{ url_for('export_items') }}" class="btn btn-secondary">📤 导出</a>
+            <button class="btn btn-primary" onclick="openModal('addItemModal')">+ 添加物品</button>
+        </div>
+    </div>
+
+    {% if items|length == 0 %}
+    <div style="text-align:center;padding:60px 0;color:#9ca3af;">
+        <div style="font-size:48px;margin-bottom:16px;">📦</div>
+        <p>还没有添加物品</p>
+        <p style="font-size:13px;margin-top:8px;">点击上方按钮添加第一个物品</p>
+    </div>
+    {% else %}
+    <div class="cat-table-container">
+    <!-- 搜索框 -->
+    <form method="GET" action="{{ url_for('items') }}" style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+        <input type="text" name="q" value="{{ search }}" placeholder="🔍 搜索 物品名/分类/型号"
+               style="flex:1;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+        <button type="submit" class="btn btn-primary">搜索</button>
+        {% if search %}<a href="{{ url_for('items') }}" class="btn btn-secondary">清除</a>{% endif %}
+    </form>
+
+    {% for cat in sorted_cats %}
+        <div class="cat-table-section">
+            <div class="cat-table-header" onclick="toggleCatTable(this)">
+                <span class="cat-toggle-icon">▶</span>
+                <span class="cat-table-icon">📁</span>
+                <span class="cat-table-title">{{ cat }}</span>
+                <span class="cat-table-count">{{ cat_groups[cat]|length }} 种</span>
+            </div>
+            <table class="table cat-table-body" style="display:none;">
+                <thead>
+                    <tr>
+                        <th style="width:40px;"></th>
+                        <th style="width:60px;">图片</th>
+                        <th>物品名称</th>
+                        <th>分类</th>
+                        <th>总数</th>
+                        <th>已借</th>
+                        <th>可用</th>
+                        <th style="width:200px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in cat_groups[cat] %}
+                    <tr class="item-main-row" onclick="toggleItemAssets({{ item.id }})" style="cursor:pointer;">
+                        <td><span class="item-expand-icon" id="itemIcon{{ item.id }}">▶</span></td>
+                        <td>
+                            {% if item.image %}
+                            <img src="{{ url_for('uploaded_file', filename=item.image) }}" class="table-item-img" alt="{{ item.name }}">
+                            {% else %}
+                            <div class="table-item-img-default">📦</div>
+                            {% endif %}
+                        </td>
+                        <td style="font-weight:500;">{{ item.name }}</td>
+                        <td>{{ item.category or '-' }}</td>
+                        <td>{{ item.total_count }}</td>
+                        <td><span style="color:#d97706;">{{ item.borrowed_count }}</span></td>
+                        <td><span style="color:#10b981;font-weight:500;">{{ item.available_count }}</span></td>
+                        <td onclick="event.stopPropagation();">
+                            <div class="table-actions">
+                                <button class="btn btn-secondary btn-sm" onclick="openAddAssetModal({{ item.id }}, '{{ item.name }}')">+ 单件</button>
+                                <button class="btn btn-secondary btn-sm" onclick="editItem({{ item.id }}, '{{ item.name }}', '{{ item.category or '' }}', {{ item.total_count }}, '{{ item.note or '' }}', '{{ item.image or '' }}')">编辑</button>
+                                <form method="POST" action="{{ url_for('delete_item', iid=item.id) }}"
+                                      onsubmit="return confirm('确定删除「{{ item.name }}」吗？\n该物品下所有单件资产也会被删除。');">
+                                    <button type="submit" class="btn btn-danger btn-sm">删除</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr class="item-assets-row" id="itemAssets{{ item.id }}" style="display:none;">
+                        <td colspan="9" style="padding:0;background:#f9fafb;">
+                            <div class="assets-sublist">
+                                {% if item.assets|length == 0 %}
+                                <div style="text-align:center;padding:20px;color:#9ca3af;font-size:13px;">暂无单件资产</div>
+                                {% else %}
+                                <table class="table assets-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width:50px;">照片</th>
+                                            <th>资产编号</th>
+                                            <th>型号/规格</th>
+                                            <th>序列号</th>
+                                            <th style="width:80px;">状态</th>
+                                            <th>备注</th>
+                                            <th style="width:130px;">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for asset in item.assets %}
+                                        <tr>
+                                            <td>
+                                                {% if asset.image %}
+                                                <img src="{{ url_for('uploaded_file', filename=asset.image) }}" class="table-item-img" style="width:36px;height:36px;" alt="">
+                                                {% else %}
+                                                <div class="table-item-img-default" style="width:36px;height:36px;font-size:14px;">📱</div>
+                                                {% endif %}
+                                            </td>
+                                            <td style="font-family:monospace;">{{ asset.asset_no }}</td>
+                                            <td style="font-size:13px;">{{ asset.model or '-' }}</td>
+                                            <td style="font-size:13px;font-family:monospace;">{{ asset.serial or '-' }}</td>
+                                            <td>
+                                                {% if asset.status == 'available' %}
+                                                <span class="status-tag status-ok">在库</span>
+                                                {% else %}
+                                                <span class="status-tag status-warn">借出中</span>
+                                                {% endif %}
+                                            </td>
+                                            <td style="font-size:13px;color:#6b7280;">{{ asset.note or '-' }}</td>
+                                            <td>
+                                                <div class="table-actions">
+                                                    <button class="btn btn-secondary btn-sm" onclick="editAsset({{ asset.id }}, '{{ asset.asset_no }}', '{{ asset.model or '' }}', '{{ asset.serial or '' }}', '{{ asset.note or '' }}', '{{ asset.image or '' }}')">编辑</button>
+                                                    {% if asset.status == 'available' %}
+                                                    <form method="POST" action="{{ url_for('delete_asset', aid=asset.id) }}"
+                                                          onsubmit="return confirm('确定删除该资产吗？');">
+                                                        <button type="submit" class="btn btn-danger btn-sm">删除</button>
+                                                    </form>
+                                                    {% endif %}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- 添加物品模态框 -->
+<div class="modal-overlay" id="addItemModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">➕ 添加物品</div>
+            <button class="modal-close" onclick="closeModal('addItemModal')">&times;</button>
+        </div>
+        <form method="POST" action="{{ url_for('add_item') }}" enctype="multipart/form-data">
+            <div class="form-group" style="text-align:center;">
+                <div class="image-upload" onclick="document.getElementById('addImageInput').click()">
+                    <div class="image-preview" id="addImagePreview">
+                        <span>📷 点击拍照/上传图片</span>
+                    </div>
+                </div>
+                <input type="file" name="image" id="addImageInput" accept="image/*" capture="environment" style="display:none;" onchange="previewImage(this, 'addImagePreview')">
+                <div style="font-size:12px;color:#9ca3af;margin-top:8px;">支持拍照或从相册选择</div>
+            </div>
+            <div class="form-group">
+                <label>物品名称 <span style="color:#ef4444;">*</span></label>
+                <input type="text" name="name" required placeholder="例如：笔记本电脑">
+            </div>
+            <div class="form-group">
+                <label>分类</label>
+                <input type="text" name="category" placeholder="例如：电子设备">
+            </div>
+            <div class="form-group">
+                <label>数量 <span style="color:#ef4444;">*</span></label>
+                <input type="number" name="total_count" value="1" min="1">
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea name="note" rows="2" placeholder="可选"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addItemModal')">取消</button>
+                <button type="submit" class="btn btn-primary">添加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 编辑物品模态框 -->
+<div class="modal-overlay" id="editItemModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">✏️ 编辑物品</div>
+            <button class="modal-close" onclick="closeModal('editItemModal')">&times;</button>
+        </div>
+        <form method="POST" id="editItemForm" action="" enctype="multipart/form-data">
+            <div class="form-group" style="text-align:center;">
+                <div class="image-upload" onclick="document.getElementById('editImageInput').click()">
+                    <div class="image-preview" id="editImagePreview">
+                        <span>📷 点击更换图片</span>
+                    </div>
+                </div>
+                <input type="file" name="image" id="editImageInput" accept="image/*" capture="environment" style="display:none;" onchange="previewImage(this, 'editImagePreview')">
+                <div style="margin-top:8px;">
+                    <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#ef4444;">
+                        <input type="checkbox" name="delete_image" value="1" id="editDeleteImage">
+                        删除当前图片
+                    </label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>物品名称 <span style="color:#ef4444;">*</span></label>
+                <input type="text" name="name" id="editItemName" required>
+            </div>
+            <div class="form-group">
+                <label>分类</label>
+                <input type="text" name="category" id="editItemCategory">
+            </div>
+            <div class="form-group">
+                <label>数量 <span style="color:#ef4444;">*</span></label>
+                <input type="number" name="total_count" id="editItemCount" min="1">
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea name="note" id="editItemNote" rows="2"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editItemModal')">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 添加单件资产模态框 -->
+<div class="modal-overlay" id="addAssetModal">
+    <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+            <div class="modal-title">➕ 添加单件资产</div>
+            <button class="modal-close" onclick="closeModal('addAssetModal')">&times;</button>
+        </div>
+        <form method="POST" action="{{ url_for('add_asset') }}" enctype="multipart/form-data">
+            <input type="hidden" name="item_id" id="addAssetItemId" value="">
+            <div class="form-group">
+                <label>所属物品</label>
+                <div id="addAssetItemName" style="padding:8px 12px;background:#f3f4f6;border-radius:6px;font-size:14px;">-</div>
+            </div>
+            <div class="form-group" style="text-align:center;">
+                <div class="image-upload" onclick="document.getElementById('addAssetImageInput').click()" style="width:120px;height:120px;margin:0 auto;">
+                    <div class="image-preview" id="addAssetImagePreview">
+                        <span>📷 点击拍照</span>
+                    </div>
+                </div>
+                <input type="file" name="asset_image" id="addAssetImageInput" accept="image/*" capture="environment" style="display:none;" onchange="previewImage(this, 'addAssetImagePreview')">
+                <div style="font-size:12px;color:#9ca3af;margin-top:8px;">支持拍照或上传图片</div>
+            </div>
+            <div class="form-group">
+                <label>资产编号 <span style="color:#ef4444;">*</span></label>
+                <input type="text" name="asset_no" id="addAssetNo" required placeholder="例如：NB-001">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>型号/规格</label>
+                    <input type="text" name="model" placeholder="例如：P40 Pro">
+                </div>
+                <div class="form-group">
+                    <label>序列号</label>
+                    <input type="text" name="serial" placeholder="序列号/IMEI">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea name="note" rows="2" placeholder="可选"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addAssetModal')">取消</button>
+                <button type="submit" class="btn btn-primary">添加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 编辑单件资产模态框 -->
+<div class="modal-overlay" id="editAssetModal">
+    <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+            <div class="modal-title">✏️ 编辑单件资产</div>
+            <button class="modal-close" onclick="closeModal('editAssetModal')">&times;</button>
+        </div>
+        <form method="POST" id="editAssetForm" action="" enctype="multipart/form-data">
+            <div class="form-group" style="text-align:center;">
+                <div class="image-upload" onclick="document.getElementById('editAssetImageInput').click()" style="width:120px;height:120px;margin:0 auto;">
+                    <div class="image-preview" id="editAssetImagePreview">
+                        <span>📷 点击更换</span>
+                    </div>
+                </div>
+                <input type="file" name="asset_image" id="editAssetImageInput" accept="image/*" capture="environment" style="display:none;" onchange="previewImage(this, 'editAssetImagePreview')">
+                <div style="margin-top:8px;">
+                    <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#ef4444;">
+                        <input type="checkbox" name="delete_image" value="1" id="editAssetDeleteImage">
+                        删除当前照片
+                    </label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>资产编号 <span style="color:#ef4444;">*</span></label>
+                <input type="text" name="asset_no" id="editAssetNo" required>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>型号/规格</label>
+                    <input type="text" name="model" id="editAssetModel">
+                </div>
+                <div class="form-group">
+                    <label>序列号</label>
+                    <input type="text" name="serial" id="editAssetSerial">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>备注</label>
+                <textarea name="note" id="editAssetNote" rows="2"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editAssetModal')">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function editItem(id, name, category, count, note, image) {
+    document.getElementById('editItemForm').action = '/item/' + id + '/edit';
+    document.getElementById('editItemName').value = name;
+    document.getElementById('editItemCategory').value = category;
+    document.getElementById('editItemCount').value = count;
+    document.getElementById('editItemNote').value = note;
+    document.getElementById('editDeleteImage').checked = false;
+
+    var preview = document.getElementById('editImagePreview');
+    if (image) {
+        preview.innerHTML = '<img src="/uploads/' + image + '" style="max-width:100%;max-height:100%;object-fit:contain;">';
+    } else {
+        preview.innerHTML = '<span>📷 点击更换图片</span>';
+    }
+
+    openModal('editItemModal');
+}
+
+function previewImage(input, previewId) {
+    var preview = document.getElementById(previewId);
+    if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = '<img src="' + e.target.result + '" style="max-width:100%;max-height:100%;object-fit:contain;">';
+        }
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function toggleCatTable(header) {
+    var section = header.closest('.cat-table-section');
+    var table = section.querySelector('.cat-table-body');
+    var toggle = header.querySelector('.cat-toggle-icon');
+
+    if (table.style.display === 'none') {
+        table.style.display = '';
+        toggle.textContent = '▼';
+    } else {
+        table.style.display = 'none';
+        toggle.textContent = '▶';
+    }
+}
+
+function toggleItemAssets(itemId) {
+    var row = document.getElementById('itemAssets' + itemId);
+    var icon = document.getElementById('itemIcon' + itemId);
+
+    if (row.style.display === 'none') {
+        row.style.display = 'table-row';
+        icon.textContent = '▼';
+    } else {
+        row.style.display = 'none';
+        icon.textContent = '▶';
+    }
+}
+
+function openAddAssetModal(itemId, itemName) {
+    document.getElementById('addAssetItemId').value = itemId;
+    document.getElementById('addAssetItemName').textContent = itemName;
+    document.getElementById('addAssetNo').value = '';
+    document.getElementById('addAssetImagePreview').innerHTML = '<span>📷 点击拍照</span>';
+    openModal('addAssetModal');
+}
+
+function editAsset(id, assetNo, model, serial, note, image) {
+    document.getElementById('editAssetForm').action = '/asset/' + id + '/edit';
+    document.getElementById('editAssetNo').value = assetNo;
+    document.getElementById('editAssetModel').value = model || '';
+    document.getElementById('editAssetSerial').value = serial || '';
+    document.getElementById('editAssetNote').value = note;
+    document.getElementById('editAssetDeleteImage').checked = false;
+
+    var preview = document.getElementById('editAssetImagePreview');
+    if (image) {
+        preview.innerHTML = '<img src="/uploads/' + image + '" style="max-width:100%;max-height:100%;object-fit:contain;">';
+    } else {
+        preview.innerHTML = '<span>📷 点击更换</span>';
+    }
+
+    openModal('editAssetModal');
+}
+</script>
+{% endblock %}
