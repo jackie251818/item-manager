@@ -1,7 +1,17 @@
 # 物品使用登记系统 (Item Manager)
 
+[![Release](https://img.shields.io/github/v/release/jackie251818/item-manager?style=for-the-badge)](https://github.com/jackie251818/item-manager/releases/latest)
+[![GHCR](https://img.shields.io/badge/docker-ghcr.io%2Fjackie251818%2Fitem--manager-blue?style=for-the-badge&logo=docker)](https://github.com/jackie251818/item-manager/pkgs/container/item-manager)
+[![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](https://github.com/jackie251818/item-manager/blob/main/LICENSE)
+
+> 当前版本 **v1.0.0** · Docker 镜像 `ghcr.io/jackie251818/item-manager:latest` · Digest `sha256:73397f036c07176d313399babbcdf6de4050c8af205b10ab7d776550b9d31a81`
+
 一个基于 Python Flask 的**物品借用登记管理系统**。
 以「人员」为主导视角，管理「物品」分类、「单件资产」和「借用记录」，支持 Excel 批量导入导出、一键归还、逾期提醒、审计日志。
+
+**生产服务器**（192.168.40.252:8080）已使用 Docker 镜像部署运行。
+
+---
 
 ## ✨ 功能特性
 
@@ -16,7 +26,7 @@
 - 🔐 **安全加固** —— CSRF 防护 / 密码哈希 / 防暴力破解 / 路径穿越防护 / 审计日志
 - 📝 **审计日志** —— 所有 DELETE 操作自动记录（谁、什么时候、删了什么）
 - 🖼️ **图片上传** —— 人员头像 / 物品照片，路径穿越防护 + HMAC 签名 URL
-- 🔄 **Flask 日志轮转** —— 5MB × 3 份，同时输出到 stderr（systemd/journalctl 友好）
+- 🔄 **Flask 日志轮转** —— 5MB × 3 份，同时输出到 stderr（Docker / systemd 友好）
 
 ## 🏗️ 技术栈
 
@@ -27,30 +37,16 @@
 | 数据库 | SQLite 3 (单文件) |
 | 前端 | 原生 HTML + CSS + JS（无框架）|
 | 导入导出 | openpyxl 3.1 |
-| 部署 | systemd 或 Docker (Gunicorn) |
+| 部署 | Docker (Gunicorn) · 生产已切换 |
+| 容器仓库 | GitHub Container Registry (ghcr.io) |
 
 ## 🚀 快速开始
 
-### 方式 1：pip + Flask dev server（开发）
-
-```bash
-git clone https://github.com/<your-name>/item-manager.git
-cd item-manager
-
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-# 启动（默认 DB: /app/data/items.db，端口 5000）
-ADMIN_PASSWORD=your-password python3 app.py
-# 浏览器访问 http://localhost:5000
-# 默认账号: admin / 你设置的密码
-```
-
-### 方式 2：Docker（推荐生产）
+### 方式 1：Docker（推荐 — 生产已采用）
 
 ```bash
 # 拉取镜像
-docker pull ghcr.io/<your-name>/item-manager:latest
+docker pull ghcr.io/jackie251818/item-manager:latest
 
 # 运行（数据持久化到 ./data）
 mkdir -p data/uploads
@@ -60,33 +56,31 @@ docker run -d --name item-manager \
   -e ADMIN_PASSWORD='your-strong-password' \
   -e SECRET_KEY='your-random-secret' \
   --restart unless-stopped \
-  ghcr.io/<your-name>/item-manager:latest
-# http://localhost:8080
+  ghcr.io/jackie251818/item-manager:latest
+# http://localhost:8080 登录 admin / 你设的密码
 ```
 
-### 方式 3：docker-compose
+**健康检查**：内置，每 30s ping `/login`，3 次失败算 unhealthy。
+
+### 方式 2：docker-compose
 
 ```bash
-git clone https://github.com/<your-name>/item-manager.git
+git clone https://github.com/jackie251818/item-manager.git
 cd item-manager
 
-# 编辑 .env 改密码后启动
-cp .env.example .env
-docker compose up -d
-
-# 查看日志
-docker compose logs -f item-manager
+cp .env.example .env      # 编辑 ADMIN_PASSWORD + SECRET_KEY
+docker compose up -d      # 启动
+docker compose logs -f item-manager   # 看日志
+docker compose ps         # 状态
 ```
 
-### 方式 4：systemd（裸机部署）
+### 方式 3：systemd（裸机部署 — 历史方式，生产已切换 Docker）
 
 ```bash
-# 安装
-git clone https://github.com/<your-name>/item-manager.git /opt/item-manager
+git clone https://github.com/jackie251818/item-manager.git /opt/item-manager
 cd /opt/item-manager
 pip3 install -r requirements.txt
 
-# 写 service 文件
 sudo tee /etc/systemd/system/item-manager.service > /dev/null <<'EOF'
 [Unit]
 Description=Item Manager - 物品使用登记系统
@@ -109,11 +103,21 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
-# 启动 + 开机自启
 sudo systemctl daemon-reload
 sudo systemctl enable --now item-manager.service
-sudo systemctl status item-manager
-# http://<ip>:8080
+```
+
+### 方式 4：pip + Flask dev server（开发）
+
+```bash
+git clone https://github.com/jackie251818/item-manager.git
+cd item-manager
+
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+ADMIN_PASSWORD=your-password python3 app.py
+# http://localhost:5000
 ```
 
 ## ⚙️ 环境变量
@@ -127,7 +131,8 @@ sudo systemctl status item-manager
 | `SECRET_KEY` | `item-manager-secret-key-2024` | Flask session + CSRF + 图片签名密钥 |
 | `UPLOAD_PATH` | `/app/data/uploads` | 图片上传目录 |
 
-> ⚠️ **必须改的**：生产环境至少改 `SECRET_KEY` + `ADMIN_PASSWORD`。
+> ⚠️ **生产必须改**：`SECRET_KEY` + `ADMIN_PASSWORD`。
+> **重要**：systemd 部署时忘记设 `DB_PATH` 会连到 `/app/data/items.db`（空壳），容器化部署自动正确。
 
 ## 📡 API 速查
 
@@ -142,7 +147,7 @@ base.html 里的 CSRF 自动注入脚本会处理，curl/脚本调用需手动�
 | POST | `/borrow/add` | 新增借用 |
 | POST | `/borrow/<id>/edit` | 编辑（预计归还日期/备注）|
 | POST | `/borrow/<id>/return` | 归还 |
-| POST | `/borrows/batch_return` | 批量归还 `{ids:[1,2,3]}` |
+| POST | `/borrows/batch_return` | 批量归还 `{"ids":[1,2,3]}` |
 | POST | `/borrows/batch_return_by_person/<person_id>` | 按人一键归还 |
 | POST | `/borrow/<id>/delete` | 删除（写审计）|
 
@@ -226,29 +231,85 @@ item-manager/
 │   ├── index.html         # 首页（人员分组 + 一键归还）
 │   ├── items.html         # 物品管理（搜索 + 数量修改）
 │   ├── persons.html       # 人员管理
-│   ├── records.html       # 借用记录（分页 + 逾期 + 批量归还 + 搜索）
-│   └── borrow_form.html   # 新增借用
+│   └── records.html       # 借用记录（分页 + 逾期 + 批量归还 + 搜索）
 └── static/
     ├── app.js             # 共用逻辑（模态框/展开/CSRF fetch patch）
     ├── favicon.svg        # 紫色清单 + 勾选
     └── style.css
 ```
 
-## 🛠️ 运维速查（systemd 部署）
+## 🛠️ 运维速查（Docker 部署 — 生产当前方式）
 
 ```bash
-systemctl status item-manager          # 状态
-systemctl restart item-manager         # 重启
-journalctl -u item-manager -f --since "10 min ago"  # 实时日志
-tail -f /opt/item-manager/data/item-manager.log     # 应用轮转日志
+# 容器状态
+docker ps --filter name=item-manager
+docker inspect item-manager --format '{{.State.Health.Status}}'   # healthy / unhealthy
+
+# 实时日志
+docker logs -f --tail 200 item-manager
+tail -f /opt/item-manager-docker/data/item-manager.log
+
+# 重启（镜像更新后）
+docker pull ghcr.io/jackie251818/item-manager:latest
+docker stop item-manager && docker rm item-manager
+# 然后重跑 docker run 命令（或用 docker-compose.yml）
 
 # 数据备份
-cp -r /opt/item-manager/data/ /opt/item-manager/data.bak-$(date +%Y%m%d-%H%M)
+cp -r /opt/item-manager-docker/data /opt/item-manager-docker/data.bak-$(date +%Y%m%d-%H%M)
+
 # 数据恢复
-# systemctl stop item-manager
-# cp -r data.bak-xxx/* data/
-# systemctl start item-manager
+docker stop item-manager
+cp -r data.bak-xxx/* /opt/item-manager-docker/data/
+docker start item-manager
 ```
+
+### systemd（已停，历史参考）
+
+```bash
+systemctl status item-manager
+systemctl restart item-manager
+journalctl -u item-manager -f --since "10 min ago"
+# 原 service 已 disable；如需切回，见 README 方式 3
+```
+
+## 🔄 发版流程
+
+```bash
+# 1. 本地
+git commit -am "feat: xxx"
+git tag v1.x.x -m "release v1.x.x"
+git push origin main --tags
+
+# 2. 构建 & 推 Docker 镜像
+docker build -t ghcr.io/jackie251818/item-manager:v1.x.x .
+docker push ghcr.io/jackie251818/item-manager:v1.x.x
+
+# 3. 创建 GitHub Release（API 或 gh CLI）
+POST https://api.github.com/repos/jackie251818/item-manager/releases
+  body: { tag_name, name, body (CHANGELOG), draft: false }
+
+# 4. 生产更新
+docker pull ghcr.io/jackie251818/item-manager:latest
+docker stop item-manager && docker rm item-manager
+docker run -d ... （同第一次）
+```
+
+## 📊 生产现状（2026-11-03）
+
+| 项 | 值 |
+|---|---|
+| 服务器 | 192.168.40.252 |
+| 端口 | 8080 |
+| 部署方式 | Docker（容器名 `item-manager`）|
+| 镜像 | `ghcr.io/jackie251818/item-manager:latest` |
+| 数据路径 | `/opt/item-manager-docker/data/` |
+| 数据库 | persons=106, items=16, assets=968, borrows=289 |
+| 版本 | v1.0.0 |
+| systemd | 已停（历史 `/etc/systemd/system/item-manager.service` 保留供参考）|
+
+## 📜 CHANGELOG
+
+详细改动见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 🤝 许可证
 
