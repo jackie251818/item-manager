@@ -17,27 +17,24 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# ===== locale 初始化（中文拼音排序）=====
-try:
-    locale.setlocale(locale.LC_ALL, 'zh_CN.UTF-8')
-except (locale.Error, OSError):
-    try:
-        locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
-    except (locale.Error, OSError):
-        locale.setlocale(locale.LC_ALL, 'C')
+# ===== 拼音排序（用 pypinyin，跨平台可靠）=====
+from pypinyin import lazy_pinyin
 
 def _sort_pinyin(rows, key='name'):
-    """按拼音排序（中文环境），兼容 DictRow / tuple"""
+    """按中文拼音排序（纯 Python，零系统 locale 依赖）"""
     def keyfn(row):
-        val = row[key] if hasattr(row, '__getitem__') and isinstance(row, dict) else None
-        if val is None and hasattr(row, 'keys'):
+        if hasattr(row, 'keys'):       # sqlite3 Row
             val = row[key]
-        if val is None:
-            # tuple 按列名索引
-            if hasattr(row, 'description'):  # sqlite3 Row
-                idx = row.keys().index(key)
+        elif isinstance(row, dict):    # dict
+            val = row.get(key, '')
+        else:                          # tuple 按列索引
+            try:
+                idx = rows[0].keys().index(key)
                 val = row[idx]
-        return locale.strxfrm(str(val or ''))
+            except Exception:
+                val = ''
+        py = ''.join(lazy_pinyin(str(val or '')))
+        return py.lower()
     return sorted(rows, key=keyfn)
 
 try:
