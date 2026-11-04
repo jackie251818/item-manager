@@ -13,6 +13,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# ===== 中文 locale（拼音排序）=====
+RUN apt-get update && apt-get install -y --no-install-recommends locales \
+    && sed -i 's/^# *\(zh_CN.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
+    && locale-gen zh_CN.UTF-8 \
+    && rm -rf /var/lib/apt/lists/*
+ENV LANG=zh_CN.UTF-8 \
+    LANGUAGE=zh_CN:zh \
+    LC_ALL=zh_CN.UTF-8
+
 # 仅拷贝装好的包
 COPY --from=builder /install /usr/local
 

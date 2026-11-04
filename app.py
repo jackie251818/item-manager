@@ -10,11 +10,35 @@ import uuid
 import io
 import logging
 import logging.handlers
+import locale
 from datetime import datetime
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, g, send_from_directory, send_file
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
+
+# ===== locale 初始化（中文拼音排序）=====
+try:
+    locale.setlocale(locale.LC_ALL, 'zh_CN.UTF-8')
+except (locale.Error, OSError):
+    try:
+        locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+    except (locale.Error, OSError):
+        locale.setlocale(locale.LC_ALL, 'C')
+
+def _sort_pinyin(rows, key='name'):
+    """按拼音排序（中文环境），兼容 DictRow / tuple"""
+    def keyfn(row):
+        val = row[key] if hasattr(row, '__getitem__') and isinstance(row, dict) else None
+        if val is None and hasattr(row, 'keys'):
+            val = row[key]
+        if val is None:
+            # tuple 按列名索引
+            if hasattr(row, 'description'):  # sqlite3 Row
+                idx = row.keys().index(key)
+                val = row[idx]
+        return locale.strxfrm(str(val or ''))
+    return sorted(rows, key=keyfn)
 
 try:
     import openpyxl
@@ -467,9 +491,9 @@ def index():
     db = get_db()
 
     # 获取所有人员
-    persons = db.execute(
-        'SELECT * FROM persons ORDER BY name'
-    ).fetchall()
+    persons = _sort_pinyin(db.execute(
+        'SELECT * FROM persons'
+    ).fetchall())
 
     # 按部门分组
     dept_groups = {}
@@ -521,9 +545,9 @@ def index():
 @login_required
 def persons():
     db = get_db()
-    all_persons = db.execute(
-        'SELECT * FROM persons ORDER BY name'
-    ).fetchall()
+    all_persons = _sort_pinyin(db.execute(
+        'SELECT * FROM persons'
+    ).fetchall())
 
     # 按部门分组
     dept_groups = {}
@@ -655,8 +679,7 @@ def items():
         sql += ' WHERE name LIKE ? OR category LIKE ? OR model LIKE ?'
         like = f'%{search}%'
         params.extend([like, like, like])
-    sql += ' ORDER BY name'
-    all_items = db.execute(sql, params).fetchall()
+    all_items = _sort_pinyin(db.execute(sql, params).fetchall())
 
     # 计算每个物品的数量 —— 以 assets 表为唯一事实源（而非 items.total_count 静态字段）
     item_list = []
@@ -1020,7 +1043,7 @@ def add_borrow():
         flash(f'借用登记成功！共 {len(valid_assets)} 件', 'success')
         return redirect(url_for('index'))
 
-    persons = db.execute('SELECT * FROM persons ORDER BY name').fetchall()
+    persons = _sort_pinyin(db.execute('SELECT * FROM persons').fetchall())
 
     # 获取所有可用的单件资产（按物品分组）
     all_assets = db.execute('''
@@ -1267,7 +1290,7 @@ def api_person_borrows(pid):
 @login_required
 def api_items_available():
     db = get_db()
-    items = db.execute('SELECT * FROM items ORDER BY name').fetchall()
+    items = _sort_pinyin(db.execute('SELECT * FROM items').fetchall())
     result = []
     for item in items:
         asset_stats = db.execute(
@@ -1295,7 +1318,7 @@ def api_items_available():
 def export_persons():
     """导出人员列表为 Excel"""
     db = get_db()
-    persons = db.execute('SELECT * FROM persons ORDER BY name').fetchall()
+    persons = _sort_pinyin(db.execute('SELECT * FROM persons').fetchall())
 
     if not HAS_OPENPYXL:
         flash('请先安装 openpyxl 以支持 Excel 导出', 'error')
@@ -1337,7 +1360,7 @@ def export_persons():
 def export_items():
     """导出物品列表为 Excel"""
     db = get_db()
-    items = db.execute('SELECT * FROM items ORDER BY name').fetchall()
+    items = _sort_pinyin(db.execute('SELECT * FROM items').fetchall())
 
     if not HAS_OPENPYXL:
         flash('请先安装 openpyxl 以支持 Excel 导出', 'error')
@@ -1438,7 +1461,7 @@ def export_summary():
     db = get_db()
 
     # 获取所有人员
-    persons = db.execute('SELECT * FROM persons ORDER BY name').fetchall()
+    persons = _sort_pinyin(db.execute('SELECT * FROM persons').fetchall())
 
     if not HAS_OPENPYXL:
         flash('请先安装 openpyxl 以支持 Excel 导出', 'error')
