@@ -173,18 +173,11 @@
             if (pselect && panel.parentNode !== pselect) pselect.appendChild(panel);
             window.__pselectOpen = false;
         } else {
-            // 先确保 panel 在原位置以便测量 trigger 的 rect
-            if (pselect && panel.parentNode !== pselect) pselect.appendChild(panel);
-            var rect = trigger.getBoundingClientRect();
-            var panelW = Math.max(rect.width, 560);
-            var maxH = Math.min(560, Math.floor(window.innerHeight * 0.65));
-            // 计算位置：在 trigger 正下方，右边界不超出 viewport
-            var left = Math.max(12, Math.min(rect.left, window.innerWidth - panelW - 12));
-            var top = rect.bottom + 2;
-            // 如果下方空间不够，翻到 trigger 上方
-            if (top + maxH > window.innerHeight - 12) {
-                top = Math.max(12, rect.top - maxH - 2);
-            }
+            var panelW = Math.max(560, Math.min(window.innerWidth - 32, 640));
+            var maxH = Math.min(560, Math.floor(window.innerHeight * 0.7));
+            // 屏幕居中
+            var left = Math.round((window.innerWidth - panelW) / 2);
+            var top = Math.round((window.innerHeight - maxH) / 2);
             // 移到 body，fixed 定位
             document.body.appendChild(panel);
             panel.classList.add('floating', 'open');
@@ -194,7 +187,6 @@
             panel.style.maxHeight = maxH + 'px';
             window.__pselectOpen = true;
             trigger.classList.add('open');
-            // 默认全部收起，搜索框聚焦
             var search = document.getElementById('transferPersonSearch');
             if (search) { search.value = ''; search.focus(); }
         }
