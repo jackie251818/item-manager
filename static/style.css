@@ -501,6 +501,102 @@ a { text-decoration: none; color: inherit; }
     flex-shrink: 0;
 }
 
+/* ===== 可折叠人员选择器 ===== */
+.pselect { position: relative; }
+
+.pselect-trigger {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: white;
+    font-size: 14px;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: border-color .15s;
+}
+.pselect-trigger:hover { border-color: #9ca3af; }
+.pselect-trigger:focus { outline: 2px solid #4f46e5; outline-offset: -1px; }
+.pselect-trigger.open { border-color: #4f46e5; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.pselect-placeholder { color: #9ca3af; }
+.pselect-arrow { font-size: 11px; color: #9ca3af; transition: transform .15s; }
+.pselect-trigger.open .pselect-arrow { transform: rotate(180deg); }
+
+.pselect-panel {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #4f46e5;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    max-height: 380px;
+    overflow-y: auto;
+    z-index: 200;
+    box-shadow: 0 8px 16px rgba(0,0,0,.08);
+}
+.pselect-panel.open { display: block; }
+
+.pselect-search {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 12px;
+    border: none;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 13px;
+    background: #fafbff;
+}
+.pselect-search:focus { outline: none; background: white; }
+
+.pselect-groups { padding: 4px 0; }
+
+.pselect-group { border-bottom: 1px solid #f9fafb; }
+.pselect-group:last-child { border-bottom: none; }
+.pselect-group[open] > .pselect-group-head .pselect-group-arrow { transform: rotate(90deg); }
+
+.pselect-group-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    cursor: pointer;
+    background: #f9fafb;
+    font-size: 13px;
+    color: #374151;
+    list-style: none;
+    user-select: none;
+}
+.pselect-group-head::-webkit-details-marker { display: none; }
+.pselect-group-head:hover { background: #f3f4f6; }
+.pselect-group-arrow { font-size: 10px; color: #9ca3af; transition: transform .12s; flex-shrink: 0; }
+.pselect-group-name { font-weight: 600; }
+.pselect-group-count { color: #9ca3af; font-size: 11px; }
+.pselect-group-busy { color: #dc2626; font-size: 11px; margin-left: auto; font-weight: 500; }
+
+.pselect-group-body { padding: 2px 0; }
+
+.pselect-item {
+    width: 100%;
+    text-align: left;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 14px 7px 30px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 13px;
+    color: #374151;
+}
+.pselect-item:hover { background: #eef2ff; color: #4f46e5; }
+.pselect-item-badge { font-size: 11px; color: #dc2626; font-weight: 500; }
+.pselect-group.hide, .pselect-item.hide { display: none; }
+
 .person-card-body {
     display: none;
     border-top: 1px solid #f0f0f0;

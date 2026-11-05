@@ -44,21 +44,56 @@
             </div>
             <div style="padding:0 24px 8px;font-size:13px;color:#6b7280;" id="transferSummary"></div>
             <div class="form-group" style="padding:8px 24px 0;">
-                <label>目标人员（按部门分组，借用中的人置顶）</label>
-                <select id="transferTarget" required
-                        style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+                <label>目标人员（点击部门可收起/展开）</label>
+                <!-- 隐藏原生 select，confirmTransfer 提交时读它的 value -->
+                <select id="transferTarget" required style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;">
                     <option value="">请选择...</option>
                     {% for dept, plist in person_groups %}
-                    <optgroup label="{{ dept }}">
-                        {% for p in plist %}
-                        <option value="{{ p.id }}">
-                            {{ p.name }}{% if p.department and p.department != dept %}（{{ p.department }}）{% endif %}
-                            {% if p.borrow_count > 0 %} 📌借{{ p.borrow_count }}件{% endif %}
-                        </option>
-                        {% endfor %}
-                    </optgroup>
+                    {% for p in plist %}
+                    <option value="{{ p.id }}">{{ p.name }}</option>
+                    {% endfor %}
                     {% endfor %}
                 </select>
+                <!-- 自定义可折叠下拉 -->
+                <div class="pselect" id="transferPersonSelect">
+                    <button type="button" class="pselect-trigger" onclick="togglePersonPanel()" id="transferPersonTrigger">
+                        <span class="pselect-placeholder">请选择目标人员...</span>
+                        <span class="pselect-arrow">▼</span>
+                    </button>
+                    <div class="pselect-panel" id="transferPersonPanel">
+                        <input type="text" class="pselect-search" placeholder="🔍 搜索姓名 / 部门..."
+                               oninput="filterPersonPanel(this.value)" id="transferPersonSearch">
+                        <div class="pselect-groups">
+                            {% for dept, plist in person_groups %}
+                            {% set ns = namespace(has_borrow=false, borrow_count=0) %}
+                            {% for p in plist %}
+                                {% if p.borrow_count > 0 %}{% set ns.has_borrow = true %}{% set ns.borrow_count = ns.borrow_count + 1 %}{% endif %}
+                            {% endfor %}
+                            <details class="pselect-group" {% if ns.has_borrow %}open{% endif %} data-dept="{{ dept }}">
+                                <summary class="pselect-group-head">
+                                    <span class="pselect-group-arrow">▶</span>
+                                    <span class="pselect-group-name">{{ dept }}</span>
+                                    <span class="pselect-group-count">{{ plist|length }} 人</span>
+                                    {% if ns.borrow_count > 0 %}
+                                    <span class="pselect-group-busy">📌{{ ns.borrow_count }}人借用中</span>
+                                    {% endif %}
+                                </summary>
+                                <div class="pselect-group-body">
+                                    {% for p in plist %}
+                                    <button type="button" class="pselect-item" data-id="{{ p.id }}"
+                                            onclick="selectPerson({{ p.id }}, '{{ p.name }}')">
+                                        <span class="pselect-item-name">{{ p.name }}</span>
+                                        {% if p.borrow_count > 0 %}
+                                        <span class="pselect-item-badge">📌借{{ p.borrow_count }}件</span>
+                                        {% endif %}
+                                    </button>
+                                    {% endfor %}
+                                </div>
+                            </details>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
             </div>
             <div style="font-size:12px;color:#6b7280;background:#f9fafb;padding:10px;border-radius:6px;margin:8px 24px 0;">
                 ℹ️ 转移只改变"谁在用"，资产还是借用中状态，借用日期和资产编号保持不变。
@@ -113,11 +148,82 @@
     window.__transferIds = [];
     window.__transferMode = 'single';
     window.__transferBusy = false;
+    window.__pselectOpen = false;
 
+    // ===== 可折叠下拉 =====
+    function togglePersonPanel() {
+        var trigger = document.getElementById('transferPersonTrigger');
+        var panel = document.getElementById('transferPersonPanel');
+        if (!trigger || !panel) return;
+        if (window.__pselectOpen) {
+            trigger.classList.remove('open');
+            panel.classList.remove('open');
+            window.__pselectOpen = false;
+        } else {
+            trigger.classList.add('open');
+            panel.classList.add('open');
+            window.__pselectOpen = true;
+            // 默认展开有 📌 借用中的部门
+            panel.querySelectorAll('.pselect-group').forEach(function(g) {
+                if (g.querySelector('.pselect-item-badge')) g.open = true;
+            });
+            var search = document.getElementById('transferPersonSearch');
+            if (search) { search.value = ''; search.focus(); }
+        }
+    }
+
+    function selectPerson(id, name) {
+        var sel = document.getElementById('transferTarget');
+        var trigger = document.getElementById('transferPersonTrigger');
+        if (sel) sel.value = String(id);
+        if (trigger) {
+            trigger.querySelector('.pselect-placeholder').textContent = name;
+            trigger.querySelector('.pselect-placeholder').style.color = '#1f2937';
+        }
+        togglePersonPanel();
+    }
+
+    function filterPersonPanel(q) {
+        q = (q || '').trim().toLowerCase();
+        var panel = document.getElementById('transferPersonPanel');
+        if (!panel) return;
+        panel.querySelectorAll('.pselect-group').forEach(function(g) {
+            var dept = (g.dataset.dept || '').toLowerCase();
+            var items = g.querySelectorAll('.pselect-item');
+            var anyVisible = false;
+            items.forEach(function(it) {
+                var n = (it.querySelector('.pselect-item-name').textContent || '').toLowerCase();
+                var show = !q || n.indexOf(q) >= 0 || dept.indexOf(q) >= 0;
+                it.classList.toggle('hide', !show);
+                if (show) anyVisible = true;
+            });
+            g.classList.toggle('hide', !anyVisible);
+            if (anyVisible && q) g.open = true;
+        });
+    }
+
+    // 点击 panel 外面关闭
+    document.addEventListener('click', function(e) {
+        if (!window.__pselectOpen) return;
+        var ps = document.getElementById('transferPersonSelect');
+        if (ps && !ps.contains(e.target)) togglePersonPanel();
+    });
+
+    // ===== 转移弹窗 =====
     function openTransferModal(source, ids, personName) {
         var modal = document.getElementById('transferModal');
         if (!modal || window.__transferBusy) return;
-        document.getElementById('transferTarget').value = '';
+        // 重置 pselect 状态
+        var sel = document.getElementById('transferTarget');
+        var trigger = document.getElementById('transferPersonTrigger');
+        if (sel) sel.value = '';
+        if (trigger) {
+            var ph = trigger.querySelector('.pselect-placeholder');
+            ph.textContent = '请选择目标人员...';
+            ph.style.color = '#9ca3af';
+        }
+        if (window.__pselectOpen) togglePersonPanel();
+
         var title = document.getElementById('transferModalTitle');
         var summary = document.getElementById('transferSummary');
 
