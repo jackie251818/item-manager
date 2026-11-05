@@ -36,7 +36,7 @@
 
     <!-- 全局：转移借用记录弹窗（records 页和首页共享） -->
     {% if persons is defined %}
-    <div class="modal-overlay" id="transferModal" style="display:none;">
+    <div class="modal-overlay" id="transferModal">
         <div class="modal" style="max-width:420px;">
             <div class="modal-header">
                 <div class="modal-title" id="transferModalTitle">🔄 转移给他人</div>
@@ -105,33 +105,29 @@
     <script>
     window.__transferIds = [];
     window.__transferMode = 'single';
-    window.__transferPersonName = '';
+    window.__transferBusy = false;
 
-    /** 打开转移弹窗。source: 'single'/'batch'/person（批量归还按钮旁边的一键转移），ids 是 borrow id 数组 */
     function openTransferModal(source, ids, personName) {
         var modal = document.getElementById('transferModal');
-        if (!modal) return;
+        if (!modal || window.__transferBusy) return;
         document.getElementById('transferTarget').value = '';
         var title = document.getElementById('transferModalTitle');
         var summary = document.getElementById('transferSummary');
 
         if (source === 'single') {
-            window.__transferMode = 'single';
             window.__transferIds = ids.slice();
             title.textContent = '🔄 转移给他人';
             summary.textContent = '将转移 ' + ids.length + ' 条记录';
         } else if (source === 'batch') {
-            var checked = typeof ids !== 'undefined' ? ids : Array.from(document.querySelectorAll('.borrow-cb:checked'))
-                .map(function(c) { return parseInt(c.value, 10); });
+            var checked = typeof ids !== 'undefined' ? ids :
+                Array.from(document.querySelectorAll('.borrow-cb:checked'))
+                    .map(function(c) { return parseInt(c.value, 10); });
             if (checked.length === 0) { alert('请先勾选要转移的记录'); return; }
-            window.__transferMode = 'batch';
             window.__transferIds = checked;
             title.textContent = '🔄 批量转移给他人';
             summary.textContent = '将转移选中的 ' + checked.length + ' 条记录';
         } else if (source === 'person') {
-            window.__transferMode = 'person';
             window.__transferIds = ids.slice();
-            window.__transferPersonName = personName || '';
             title.textContent = '🔄 转移 ' + (personName || '') + ' 的借用';
             summary.textContent = personName + ' 有 ' + ids.length + ' 件借用中物品，选择接收人后一键转移';
         }
@@ -139,10 +135,11 @@
     }
 
     function confirmTransfer() {
-        var targetEl = document.getElementById('transferTarget');
-        var targetPid = parseInt(targetEl.value, 10);
+        if (window.__transferBusy) return;
+        var targetPid = parseInt(document.getElementById('transferTarget').value, 10);
         if (!targetPid) { alert('请选择目标人员'); return; }
         var btn = document.getElementById('transferSubmitBtn');
+        window.__transferBusy = true;
         btn.disabled = true;
         btn.textContent = '处理中...';
 
@@ -150,21 +147,19 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ids: window.__transferIds, target_person_id: targetPid })
-        }).then(function(r) { return r.json(); })
-          .then(function(data) {
-              if (data.ok) {
-                  alert(data.msg);
-                  location.reload();
-              } else {
-                  alert(data.msg || '转移失败');
-                  btn.disabled = false;
-                  btn.textContent = '确认转移';
-              }
-          }).catch(function(err) {
-              alert('请求失败：' + err);
-              btn.disabled = false;
-              btn.textContent = '确认转移';
-          });
+        }).then(function(r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function(data) {
+            closeModal('transferModal');
+            alert(data.msg || ('转移完成：' + (data.success || 0) + ' 条'));
+            location.reload();
+        }).catch(function(err) {
+            alert('请求失败：' + err.message);
+            btn.disabled = false;
+            btn.textContent = '确认转移';
+            window.__transferBusy = false;
+        });
     }
     </script>
     {% endif %}

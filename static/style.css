@@ -486,6 +486,19 @@ a { text-decoration: none; color: inherit; }
     font-size: 12px;
     font-weight: 500;
     white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.person-action-bar {
+    display: flex;
+    gap: 10px;
+    padding: 14px 20px;
+    border-bottom: 1px solid #f0f0f0;
+    background: #fafbff;
+}
+
+.person-action-bar .btn {
+    flex-shrink: 0;
 }
 
 .person-card-body {
