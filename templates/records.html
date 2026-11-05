@@ -9,7 +9,7 @@
             <button type="button" class="btn btn-success" id="batchReturnBtn" onclick="batchReturn()" disabled title="请先勾选要归还的记录">
                 ✅ 批量归还 <span id="batchCount"></span>
             </button>
-            <button type="button" class="btn btn-primary" id="batchTransferBtn" onclick="openTransferModal()" disabled title="请先勾选要转移的记录">
+            <button type="button" class="btn btn-primary" id="batchTransferBtn" onclick="openTransferModal('batch')" disabled title="请先勾选要转移的记录">
                 🔄 批量转移 <span id="batchTransferCount"></span>
             </button>
             <a href="{{ url_for('export_records') }}" class="btn btn-secondary">📤 导出 Excel</a>
@@ -120,7 +120,7 @@
                               onsubmit="return confirm('确认归还吗？');">
                             <button type="submit" class="btn btn-success btn-sm">归还</button>
                         </form>
-                        <button class="btn btn-primary btn-sm" onclick="openTransferModal({{ borrow.id }})">转移</button>
+                        <button class="btn btn-primary btn-sm" onclick="openTransferModal('single', [{{ borrow.id }}])">转移</button>
                         {% endif %}
                         <form method="POST" action="{{ url_for('delete_borrow', bid=borrow.id) }}"
                               onsubmit="return confirm('确定删除此记录吗？');">
@@ -199,34 +199,6 @@
         </form>
     </div>
 </div>
-
-<!-- 转移借用记录模态框 -->
-<div class="modal-overlay" id="transferModal">
-    <div class="modal" style="max-width:420px;">
-        <div class="modal-header">
-            <div class="modal-title">🔄 转移给他人</div>
-            <button class="modal-close" onclick="closeModal('transferModal')">&times;</button>
-        </div>
-        <form method="POST" id="transferForm" onsubmit="return confirmTransfer(event)">
-            <div class="form-group">
-                <label>目标人员</label>
-                <select name="target_person_id" id="transferTarget" required style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
-                    <option value="">请选择...</option>
-                    {% for p in persons %}
-                    <option value="{{ p.id }}">{{ p.name }}{% if p.department %}（{{ p.department }}）{% endif %}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div style="font-size:12px;color:#6b7280;background:#f9fafb;padding:10px;border-radius:6px;margin-bottom:12px;">
-                ℹ️ 转移只改变"谁在用"，资产还是借用中状态，借用日期和资产编号保持不变。
-            </div>
-            <div class="form-actions">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('transferModal')">取消</button>
-                <button type="submit" class="btn btn-primary" id="transferSubmitBtn">确认转移</button>
-            </div>
-        </form>
-    </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
@@ -265,7 +237,6 @@ function updateBatchBtn() {
     }
     returnCnt.textContent = checked.length ? '(' + checked.length + ')' : '';
     transferCnt.textContent = checked.length ? '(' + checked.length + ')' : '';
-    // 全选框状态同步
     var allCb = document.querySelectorAll('.borrow-cb');
     var allSel = document.getElementById('selectAll');
     if (allSel && allCb.length > 0) {
@@ -296,63 +267,6 @@ function batchReturn() {
           btn.disabled = false;
           btn.innerHTML = '✅ 批量归还 <span id="batchCount"></span>';
       });
-}
-
-// ===== 转移 =====
-var transferMode = 'single';
-var transferIds = [];
-
-function openTransferModal(singleId) {
-    var modal = document.getElementById('transferModal');
-    var target = document.getElementById('transferTarget');
-
-    if (typeof singleId === 'number') {
-        // 单条转移：POST 表单到 /borrow/<id>/transfer
-        transferMode = 'single';
-        transferIds = [singleId];
-        document.getElementById('transferForm').action = '/borrow/' + singleId + '/transfer';
-    } else {
-        // 批量转移：AJAX POST 到 /borrows/batch_transfer
-        var checked = document.querySelectorAll('.borrow-cb:checked');
-        if (checked.length === 0) return;
-        transferMode = 'batch';
-        transferIds = Array.from(checked).map(function(c) { return parseInt(c.value, 10); });
-    }
-    target.value = '';
-    openModal('transferModal');
-}
-
-function confirmTransfer(event) {
-    event.preventDefault();
-    var target = document.getElementById('transferTarget');
-    if (!target.value) { alert('请选择目标人员'); return false; }
-
-    var btn = document.getElementById('transferSubmitBtn');
-    btn.disabled = true;
-    btn.textContent = '处理中...';
-
-    var payload = { ids: transferIds, target_person_id: parseInt(target.value, 10) };
-
-    fetch('/borrows/batch_transfer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    }).then(function(r) { return r.json(); })
-      .then(function(data) {
-          if (data.ok) {
-              alert(data.msg);
-              location.reload();
-          } else {
-              alert(data.msg || '转移失败');
-              btn.disabled = false;
-              btn.textContent = '确认转移';
-          }
-      }).catch(function(err) {
-          alert('请求失败：' + err);
-          btn.disabled = false;
-          btn.textContent = '确认转移';
-      });
-    return false;
 }
 </script>
 {% endblock %}

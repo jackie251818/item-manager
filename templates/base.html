@@ -34,6 +34,36 @@
         {% block content %}{% endblock %}
     </div>
 
+    <!-- 全局：转移借用记录弹窗（records 页和首页共享） -->
+    {% if persons is defined %}
+    <div class="modal-overlay" id="transferModal" style="display:none;">
+        <div class="modal" style="max-width:420px;">
+            <div class="modal-header">
+                <div class="modal-title" id="transferModalTitle">🔄 转移给他人</div>
+                <button class="modal-close" onclick="closeModal('transferModal')">&times;</button>
+            </div>
+            <div style="padding:0 24px 8px;font-size:13px;color:#6b7280;" id="transferSummary"></div>
+            <div class="form-group" style="padding:8px 24px 0;">
+                <label>目标人员</label>
+                <select id="transferTarget" required
+                        style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+                    <option value="">请选择...</option>
+                    {% for p in persons %}
+                    <option value="{{ p.id }}">{{ p.name }}{% if p.department %}（{{ p.department }}）{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="font-size:12px;color:#6b7280;background:#f9fafb;padding:10px;border-radius:6px;margin:8px 24px 0;">
+                ℹ️ 转移只改变"谁在用"，资产还是借用中状态，借用日期和资产编号保持不变。
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('transferModal')">取消</button>
+                <button type="button" class="btn btn-primary" id="transferSubmitBtn" onclick="confirmTransfer()">确认转移</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <script src="{{ url_for('static', filename='app.js') }}"></script>
     <script>
     // ===== CSRF 自动注入 =====
@@ -69,6 +99,76 @@
         };
     })();
     </script>
+
+    <!-- 全局：转移 JS（records 页批量勾选 + 首页单条/批量都能用） -->
+    {% if persons is defined %}
+    <script>
+    window.__transferIds = [];
+    window.__transferMode = 'single';
+    window.__transferPersonName = '';
+
+    /** 打开转移弹窗。source: 'single'/'batch'/person（批量归还按钮旁边的一键转移），ids 是 borrow id 数组 */
+    function openTransferModal(source, ids, personName) {
+        var modal = document.getElementById('transferModal');
+        if (!modal) return;
+        document.getElementById('transferTarget').value = '';
+        var title = document.getElementById('transferModalTitle');
+        var summary = document.getElementById('transferSummary');
+
+        if (source === 'single') {
+            window.__transferMode = 'single';
+            window.__transferIds = ids.slice();
+            title.textContent = '🔄 转移给他人';
+            summary.textContent = '将转移 ' + ids.length + ' 条记录';
+        } else if (source === 'batch') {
+            var checked = typeof ids !== 'undefined' ? ids : Array.from(document.querySelectorAll('.borrow-cb:checked'))
+                .map(function(c) { return parseInt(c.value, 10); });
+            if (checked.length === 0) { alert('请先勾选要转移的记录'); return; }
+            window.__transferMode = 'batch';
+            window.__transferIds = checked;
+            title.textContent = '🔄 批量转移给他人';
+            summary.textContent = '将转移选中的 ' + checked.length + ' 条记录';
+        } else if (source === 'person') {
+            window.__transferMode = 'person';
+            window.__transferIds = ids.slice();
+            window.__transferPersonName = personName || '';
+            title.textContent = '🔄 转移 ' + (personName || '') + ' 的借用';
+            summary.textContent = personName + ' 有 ' + ids.length + ' 件借用中物品，选择接收人后一键转移';
+        }
+        openModal('transferModal');
+    }
+
+    function confirmTransfer() {
+        var targetEl = document.getElementById('transferTarget');
+        var targetPid = parseInt(targetEl.value, 10);
+        if (!targetPid) { alert('请选择目标人员'); return; }
+        var btn = document.getElementById('transferSubmitBtn');
+        btn.disabled = true;
+        btn.textContent = '处理中...';
+
+        fetch('/borrows/batch_transfer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: window.__transferIds, target_person_id: targetPid })
+        }).then(function(r) { return r.json(); })
+          .then(function(data) {
+              if (data.ok) {
+                  alert(data.msg);
+                  location.reload();
+              } else {
+                  alert(data.msg || '转移失败');
+                  btn.disabled = false;
+                  btn.textContent = '确认转移';
+              }
+          }).catch(function(err) {
+              alert('请求失败：' + err);
+              btn.disabled = false;
+              btn.textContent = '确认转移';
+          });
+    }
+    </script>
+    {% endif %}
+
     {% block scripts %}{% endblock %}
 </body>
 </html>

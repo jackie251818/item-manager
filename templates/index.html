@@ -82,6 +82,10 @@
                                 onclick="event.stopPropagation();batchReturnPerson({{ person.id }}, '{{ person.name }}', this)">
                             一键归还
                         </button>
+                        <button class="btn btn-primary btn-sm" style="padding:2px 8px;font-size:11px;margin-left:4px;"
+                                onclick="event.stopPropagation();transferPerson({{ person.id }}, '{{ person.name }}')">
+                            一键转移
+                        </button>
                         {% endif %}
                         <span class="expand-icon">▶</span>
                     </div>
@@ -125,6 +129,7 @@
                                 </div>
                                 <div class="borrow-item-actions">
                                     <button class="btn btn-secondary btn-sm" onclick="editBorrow({{ borrow.id }}, '{{ borrow.expected_return_date or '' }}', '{{ borrow.note or '' }}')">编辑</button>
+                                    <button class="btn btn-primary btn-sm" onclick="openTransferModal('single', [{{ borrow.id }}])">转移</button>
                                     <form method="POST" action="{{ url_for('return_borrow', bid=borrow.id) }}"
                                           onsubmit="return confirm('确认归还 {{ borrow.item_name }}{% if borrow.asset_no %}（{{ borrow.asset_no }}）{% endif %}？');">
                                         <input type="hidden" name="return_date" value="">
@@ -287,6 +292,21 @@ function batchReturnPerson(personId, personName, btn) {
           alert('请求失败：' + err);
           btn.disabled = false;
           btn.textContent = '一键归还';
+      });
+}
+
+// ===== 一键转移某个人的全部借用 =====
+function transferPerson(personId, personName) {
+    fetch('/api/person/' + personId + '/borrows', {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+    }).then(function(r) { return r.json(); })
+      .then(function(borrows) {
+          var ids = borrows.map(function(b) { return b.id; });
+          if (ids.length === 0) { alert(personName + ' 没有借用中的物品'); return; }
+          openTransferModal('person', ids, personName);
+      }).catch(function(err) {
+          alert('获取借用列表失败：' + err);
       });
 }
 
