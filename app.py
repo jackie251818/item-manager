@@ -1058,18 +1058,19 @@ def add_borrow():
 
     persons = _sort_pinyin(db.execute('SELECT * FROM persons').fetchall())
 
-    # 获取所有可用的单件资产（按物品分组）
-    all_assets = db.execute('''
-        SELECT a.*, i.name as item_name, i.category as item_category, i.model as item_model
-        FROM assets a
-        JOIN items i ON a.item_id = i.id
-        WHERE a.status = 'available'
+    # 获取全部物品及其可用资产（LEFT JOIN：无可用资产的物品也保留，前端标灰「全部借出」，
+    # 否则整类借出时该分类会从目录里消失）
+    all_rows = db.execute('''
+        SELECT i.id AS item_id, i.name AS item_name, i.category AS item_category, i.model AS item_model,
+               a.id, a.asset_no, a.model, a.serial, a.image
+        FROM items i
+        LEFT JOIN assets a ON a.item_id = i.id AND a.status = 'available'
         ORDER BY i.name, a.asset_no
     ''').fetchall()
 
-    # 按物品分组
+    # 按物品分组（assets 为空表示该物品全部借出）
     asset_by_item = {}
-    for a in all_assets:
+    for a in all_rows:
         iid = a['item_id']
         if iid not in asset_by_item:
             asset_by_item[iid] = {
@@ -1079,7 +1080,8 @@ def add_borrow():
                 'item_model': a['item_model'],
                 'assets': []
             }
-        asset_by_item[iid]['assets'].append(a)
+        if a['id'] is not None:
+            asset_by_item[iid]['assets'].append(a)
 
     # 转成列表并排序
     item_groups = sorted(asset_by_item.values(), key=lambda x: x['item_name'])

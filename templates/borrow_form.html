@@ -61,20 +61,27 @@
                         <div class="ap-cat-header" onclick="toggleApCatGroup(this)">
                             <span class="ap-cat-arrow">▶</span>
                             <span class="ap-cat-name">{{ cat.category }}</span>
-                            <span class="ap-cat-count">{{ cat.groups|length }} 种 · {{ cat.asset_count }} 件可用</span>
+                            <span class="ap-cat-count{% if cat.asset_count == 0 %} zero{% endif %}">{{ cat.groups|length }} 种 · {{ cat.asset_count }} 件可用</span>
                         </div>
                         <div class="ap-cat-body" style="display:none;">
                             {% for group in cat.groups %}
-                            <div class="ap-item-group" data-search="{{ group.item_name }} {{ group.item_category or '' }} {{ group.item_model or '' }}">
+                            <div class="ap-item-group{% if group.assets|length == 0 %} ap-item-empty{% endif %}" data-search="{{ group.item_name }} {{ group.item_category or '' }} {{ group.item_model or '' }}">
                                 <div class="ap-item-header" onclick="toggleApItemGroup(this)">
                                     <span class="ap-item-arrow">▶</span>
                                     <span class="ap-item-name">{{ group.item_name }}</span>
                                     <span class="ap-item-sub">
                                         {% if group.item_model %}型号：{{ group.item_model }}{% endif %}
                                     </span>
+                                    {% if group.assets|length > 0 %}
                                     <span class="ap-item-count">{{ group.assets|length }} 件可用</span>
+                                    {% else %}
+                                    <span class="ap-item-count zero">全部借出</span>
+                                    {% endif %}
                                 </div>
                                 <div class="ap-asset-list" style="display:none;">
+                                    {% if group.assets|length == 0 %}
+                                    <div class="ap-empty-hint">该物品全部借出中，归还后可借用</div>
+                                    {% endif %}
                                     {% for asset in group.assets %}
                                     <label class="ap-asset-item" data-search="{{ asset.asset_no }} {{ asset.model or '' }} {{ asset.serial or '' }}">
                                         <input type="checkbox" class="ap-asset-check" value="{{ asset.id }}" onchange="toggleAssetSelect({{ asset.id }}, '{{ asset.asset_no }}', '{{ group.item_name }}', this.checked)">
