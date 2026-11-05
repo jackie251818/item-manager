@@ -543,6 +543,23 @@ a { text-decoration: none; color: inherit; }
 }
 .pselect-panel.open { display: flex; }
 
+/* 浮窗模式：打开时移到 body，fixed 定位，不受父容器裁切 */
+.pselect-panel.floating {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: auto;
+    border-radius: 8px;
+    border: 1px solid #4f46e5;
+    box-shadow: 0 16px 40px rgba(79,70,229,.25), 0 4px 14px rgba(0,0,0,.1);
+    animation: pselectFloatIn .18s ease-out;
+    z-index: 9999;
+}
+@keyframes pselectFloatIn {
+    from { opacity: 0; transform: translateY(-6px) scale(.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .pselect-search {
     width: 100%;
     box-sizing: border-box;

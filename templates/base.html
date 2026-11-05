@@ -163,15 +163,37 @@
     function togglePersonPanel() {
         var trigger = document.getElementById('transferPersonTrigger');
         var panel = document.getElementById('transferPersonPanel');
+        var pselect = document.getElementById('transferPersonSelect');
         if (!trigger || !panel) return;
         if (window.__pselectOpen) {
             trigger.classList.remove('open');
-            panel.classList.remove('open');
+            panel.classList.remove('open', 'floating');
+            panel.style.top = panel.style.left = panel.style.width = panel.style.maxHeight = '';
+            // 移回原位置
+            if (pselect && panel.parentNode !== pselect) pselect.appendChild(panel);
             window.__pselectOpen = false;
         } else {
-            trigger.classList.add('open');
-            panel.classList.add('open');
+            // 先确保 panel 在原位置以便测量 trigger 的 rect
+            if (pselect && panel.parentNode !== pselect) pselect.appendChild(panel);
+            var rect = trigger.getBoundingClientRect();
+            var panelW = Math.max(rect.width, 560);
+            var maxH = Math.min(560, Math.floor(window.innerHeight * 0.65));
+            // 计算位置：在 trigger 正下方，右边界不超出 viewport
+            var left = Math.max(12, Math.min(rect.left, window.innerWidth - panelW - 12));
+            var top = rect.bottom + 2;
+            // 如果下方空间不够，翻到 trigger 上方
+            if (top + maxH > window.innerHeight - 12) {
+                top = Math.max(12, rect.top - maxH - 2);
+            }
+            // 移到 body，fixed 定位
+            document.body.appendChild(panel);
+            panel.classList.add('floating', 'open');
+            panel.style.left = left + 'px';
+            panel.style.top = top + 'px';
+            panel.style.width = panelW + 'px';
+            panel.style.maxHeight = maxH + 'px';
             window.__pselectOpen = true;
+            trigger.classList.add('open');
             // 默认全部收起，搜索框聚焦
             var search = document.getElementById('transferPersonSearch');
             if (search) { search.value = ''; search.focus(); }
@@ -228,7 +250,15 @@
     document.addEventListener('click', function(e) {
         if (!window.__pselectOpen) return;
         var ps = document.getElementById('transferPersonSelect');
-        if (ps && !ps.contains(e.target)) togglePersonPanel();
+        var panel = document.getElementById('transferPersonPanel');
+        if (panel && panel.contains(e.target)) return;  // 点浮窗内部不关闭
+        if (ps && ps.contains(e.target)) return;       // 点 trigger 不关闭
+        togglePersonPanel();
+    });
+
+    // ESC 关闭
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && window.__pselectOpen) togglePersonPanel();
     });
 
     // ===== 转移弹窗 =====
