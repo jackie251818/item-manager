@@ -35,21 +35,28 @@
     </div>
 
     <!-- 全局：转移借用记录弹窗（records 页和首页共享） -->
-    {% if persons is defined %}
+    {% if person_groups is defined %}
     <div class="modal-overlay" id="transferModal">
-        <div class="modal" style="max-width:420px;">
+        <div class="modal" style="max-width:460px;">
             <div class="modal-header">
                 <div class="modal-title" id="transferModalTitle">🔄 转移给他人</div>
                 <button class="modal-close" onclick="closeModal('transferModal')">&times;</button>
             </div>
             <div style="padding:0 24px 8px;font-size:13px;color:#6b7280;" id="transferSummary"></div>
             <div class="form-group" style="padding:8px 24px 0;">
-                <label>目标人员</label>
+                <label>目标人员（按部门分组，借用中的人置顶）</label>
                 <select id="transferTarget" required
                         style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
                     <option value="">请选择...</option>
-                    {% for p in persons %}
-                    <option value="{{ p.id }}">{{ p.name }}{% if p.department %}（{{ p.department }}）{% endif %}</option>
+                    {% for dept, plist in person_groups %}
+                    <optgroup label="{{ dept }}">
+                        {% for p in plist %}
+                        <option value="{{ p.id }}">
+                            {{ p.name }}{% if p.department and p.department != dept %}（{{ p.department }}）{% endif %}
+                            {% if p.borrow_count > 0 %} 📌借{{ p.borrow_count }}件{% endif %}
+                        </option>
+                        {% endfor %}
+                    </optgroup>
                     {% endfor %}
                 </select>
             </div>
@@ -101,7 +108,7 @@
     </script>
 
     <!-- 全局：转移 JS（records 页批量勾选 + 首页单条/批量都能用） -->
-    {% if persons is defined %}
+    {% if person_groups is defined %}
     <script>
     window.__transferIds = [];
     window.__transferMode = 'single';

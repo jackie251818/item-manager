@@ -37,6 +37,39 @@ def _sort_pinyin(rows, key='name'):
         return py.lower()
     return sorted(rows, key=keyfn)
 
+
+def _build_person_groups(db):
+    """构建按部门分组的人员下拉数据，附带 borrow_count（借用中数量）。
+    部门内排序：借用中多的排前面 → 拼音升序，方便快速锁定当前有借用的人。
+    返回 (rows, groups)：rows 扁平列表（向后兼容），groups 是 [(dept, [dict, dict...])]。
+    """
+    rows = db.execute('''
+        SELECT p.id, p.name, p.department,
+               COALESCE(SUM(CASE WHEN b.status='borrowed' THEN 1 ELSE 0 END), 0) AS borrow_count
+        FROM persons p
+        LEFT JOIN borrows b ON b.person_id = p.id
+        GROUP BY p.id
+    ''').fetchall()
+    # 转 dict + 排序
+    rows = [dict(r) for r in rows]
+    rows.sort(key=lambda r: (-r['borrow_count'], _pinyin_key(r['name'])))
+
+    # 按部门分组
+    groups = {}
+    for p in rows:
+        dept = (p['department'] or '').strip() or '未分配部门'
+        groups.setdefault(dept, []).append(p)
+
+    # 部门排序（未分配部门永远最后）
+    def _dk(d):
+        return '' if d == '未分配部门' else ''.join(lazy_pinyin(d)).lower()
+    depts_sorted = sorted(groups.keys(), key=_dk)
+    return rows, [(d, groups[d]) for d in depts_sorted]
+
+
+def _pinyin_key(s):
+    return ''.join(lazy_pinyin(str(s or ''))).lower()
+
 try:
     import openpyxl
     HAS_OPENPYXL = True
@@ -503,7 +536,10 @@ def index():
     """首页 - 以人员为主导的视图"""
     db = get_db()
 
-    # 获取所有人员
+    # 人员下拉（按部门分组 + 借用中多的排前）
+    _, person_groups = _build_person_groups(db)
+
+    # 获取所有人员（首页卡片用，按部门分组）
     persons = _sort_pinyin(db.execute(
         'SELECT * FROM persons'
     ).fetchall())
@@ -550,7 +586,8 @@ def index():
                            dept_groups=dept_groups,
                            sorted_depts=sorted_depts,
                            person_borrows=person_borrows,
-                           stats=stats)
+                           stats=stats,
+                           person_groups=person_groups)
 
 
 # ---------- 人员管理 ----------
@@ -1393,14 +1430,14 @@ def records():
             (today,)).fetchone()[0],
     }
 
-    # 人员下拉列表（批量/单条转移的目标选择器用，按拼音排序）
-    persons = _sort_pinyin(db.execute("SELECT id, name, department FROM persons ORDER BY name").fetchall())
+    # 人员下拉列表（按部门分组 + 借用中多的排前）
+    _, person_groups = _build_person_groups(db)
 
     return render_template('records.html', borrows=rows, status=status,
                            overdue_ids=overdue_ids, search=search,
                            page=page, per_page=per_page, total=total,
                            total_pages=total_pages, counts=counts,
-                           persons=persons)
+                           person_groups=person_groups)
 
 
 # ---------- API ----------
