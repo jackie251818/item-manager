@@ -1169,6 +1169,104 @@ def batch_return_borrows():
     return jsonify({'ok': True, 'msg': msg, 'success': len(valid), 'skip': skip, 'fail': 0})
 
 
+@app.route('/borrows/batch_transfer', methods=['POST'])
+@login_required
+def batch_transfer_borrows():
+    """批量转移：把一批借用中记录的 person_id 原子 UPDATE 到目标人员名下，
+    其他字段全部保留（borrow_date / asset_id / status 都不动）。
+    语义不是"归还 + 重新借出"——转移只改变"谁在用"，资产还是借用中状态。
+    """
+    body = request.get_json(silent=True) or request.form
+    raw_ids = body.get('ids', [])
+    if isinstance(raw_ids, str):
+        raw_ids = [int(x.strip()) for x in raw_ids.split(',') if x.strip().isdigit()]
+    else:
+        raw_ids = [int(x) for x in raw_ids if str(x).isdigit()]
+    target_pid = int(body.get('target_person_id', 0))
+
+    if not raw_ids:
+        return jsonify({'ok': False, 'msg': '未选择任何记录'}), 400
+    if not target_pid:
+        return jsonify({'ok': False, 'msg': '请选择目标人员'}), 400
+
+    db = get_db()
+
+    # 校验目标人员存在
+    target = db.execute("SELECT id, name FROM persons WHERE id=?", (target_pid,)).fetchone()
+    if not target:
+        return jsonify({'ok': False, 'msg': '目标人员不存在'}), 400
+
+    # 过滤：只处理借用中、且当前不是目标人自己借的
+    placeholders = ','.join('?' * len(raw_ids))
+    rows = db.execute(
+        "SELECT id, person_id FROM borrows WHERE id IN ({}) AND status='borrowed'".format(placeholders),
+        raw_ids
+    ).fetchall()
+    valid = [r for r in rows if r['person_id'] != target_pid]
+    skip = len(raw_ids) - len(valid)
+
+    if not valid:
+        return jsonify({'ok': False, 'msg': '没有可转移的记录'}), 400
+
+    # 汇总源人员（用于审计日志 detail）
+    source_ids = sorted({r['person_id'] for r in valid})
+    source_names = [r['name'] for r in db.execute(
+        "SELECT name FROM persons WHERE id IN ({})".format(','.join('?' * len(source_ids))), source_ids
+    ).fetchall()]
+
+    try:
+        with db:
+            db.execute(
+                "UPDATE borrows SET person_id=? WHERE id IN ({})".format(','.join('?' * len(valid))),
+                [target_pid] + [r['id'] for r in valid]
+            )
+            _audit('transfer', 'borrows', ','.join(str(r['id']) for r in valid),
+                       '{} -> {}'.format('、'.join(source_names), target['name']))
+    except Exception as e:
+        return jsonify({'ok': False, 'msg': '转移失败：' + str(e)}), 500
+
+    msg = '成功转移 {} 条记录给「{}」'.format(len(valid), target['name'])
+    if skip:
+        msg += '，跳过 {} 条（已归还、目标人员自己或不存在）'.format(skip)
+    return jsonify({'ok': True, 'msg': msg, 'success': len(valid), 'skip': skip})
+
+
+@app.route('/borrow/<int:bid>/transfer', methods=['POST'])
+@login_required
+def transfer_borrow(bid):
+    """单条转移：GET 返回确认页（目标人员下拉），POST 执行转移"""
+    db = get_db()
+    borrow = db.execute('SELECT * FROM borrows WHERE id=?', (bid,)).fetchone()
+    if not borrow:
+        flash('记录不存在', 'error')
+        return redirect(url_for('records'))
+    if borrow['status'] != 'borrowed':
+        flash('已归还的记录不能转移', 'error')
+        return redirect(url_for('records'))
+
+    target_pid = int(request.form.get('target_person_id', 0))
+    if not target_pid:
+        flash('请选择目标人员', 'error')
+        return redirect(request.referrer or url_for('records'))
+    if target_pid == borrow['person_id']:
+        flash('目标人员不能是当前借用人员', 'error')
+        return redirect(request.referrer or url_for('records'))
+
+    target = db.execute("SELECT name FROM persons WHERE id=?", (target_pid,)).fetchone()
+    if not target:
+        flash('目标人员不存在', 'error')
+        return redirect(request.referrer or url_for('records'))
+
+    source = db.execute("SELECT name FROM persons WHERE id=?", (borrow['person_id'],)).fetchone()
+
+    db.execute("UPDATE borrows SET person_id=? WHERE id=? AND status='borrowed'", (target_pid, bid))
+    db.commit()
+    _audit('transfer', 'borrow', str(bid), '{} -> {}'.format(source['name'] if source else '?', target['name']))
+
+    flash('已转移给「{}」'.format(target['name']), 'success')
+    return redirect(request.referrer or url_for('records'))
+
+
 @app.route('/borrow/<int:bid>/return', methods=['POST'])
 @login_required
 def return_borrow(bid):
@@ -1295,10 +1393,14 @@ def records():
             (today,)).fetchone()[0],
     }
 
+    # 人员下拉列表（批量/单条转移的目标选择器用，按拼音排序）
+    persons = _sort_pinyin(db.execute("SELECT id, name, department FROM persons ORDER BY name").fetchall())
+
     return render_template('records.html', borrows=rows, status=status,
                            overdue_ids=overdue_ids, search=search,
                            page=page, per_page=per_page, total=total,
-                           total_pages=total_pages, counts=counts)
+                           total_pages=total_pages, counts=counts,
+                           persons=persons)
 
 
 # ---------- API ----------
