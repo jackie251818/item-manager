@@ -69,7 +69,7 @@
                             {% for p in plist %}
                                 {% if p.borrow_count > 0 %}{% set ns.has_borrow = true %}{% set ns.borrow_count = ns.borrow_count + 1 %}{% endif %}
                             {% endfor %}
-                            <details class="pselect-group" {% if ns.has_borrow %}open{% endif %} data-dept="{{ dept }}">
+                            <details class="pselect-group" data-dept="{{ dept }}">
                                 <summary class="pselect-group-head">
                                     <span class="pselect-group-arrow">▶</span>
                                     <span class="pselect-group-name">{{ dept }}</span>
@@ -163,10 +163,7 @@
             trigger.classList.add('open');
             panel.classList.add('open');
             window.__pselectOpen = true;
-            // 默认展开有 📌 借用中的部门
-            panel.querySelectorAll('.pselect-group').forEach(function(g) {
-                if (g.querySelector('.pselect-item-badge')) g.open = true;
-            });
+            // 默认全部收起，搜索框聚焦
             var search = document.getElementById('transferPersonSearch');
             if (search) { search.value = ''; search.focus(); }
         }
