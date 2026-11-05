@@ -73,7 +73,7 @@
                                 <summary class="pselect-group-head">
                                     <span class="pselect-group-arrow">▶</span>
                                     <span class="pselect-group-name">{{ dept }}</span>
-                                    <span class="pselect-group-count">{{ plist|length }} 人</span>
+                                    <span class="pselect-group-count">· {{ plist|length }} 人</span>
                                     {% if ns.borrow_count > 0 %}
                                     <span class="pselect-group-busy">📌{{ ns.borrow_count }}人借用中</span>
                                     {% endif %}
@@ -91,6 +91,15 @@
                                 </div>
                             </details>
                             {% endfor %}
+                        </div>
+                        {% set ns = namespace(tot_depts=0, tot_people=0, tot_busy=0) %}
+                        {% for dept, plist in person_groups %}
+                            {% set ns.tot_depts = ns.tot_depts + 1 %}
+                            {% set ns.tot_people = ns.tot_people + plist|length %}
+                            {% for p in plist %}{% if p.borrow_count > 0 %}{% set ns.tot_busy = ns.tot_busy + 1 %}{% endif %}{% endfor %}
+                        {% endfor %}
+                        <div class="pselect-footer">
+                            共 {{ ns.tot_depts }} 个部门 · {{ ns.tot_people }} 人 · 📌{{ ns.tot_busy }} 人借用中
                         </div>
                     </div>
                 </div>
@@ -172,12 +181,28 @@
     function selectPerson(id, name) {
         var sel = document.getElementById('transferTarget');
         var trigger = document.getElementById('transferPersonTrigger');
+        var panel = document.getElementById('transferPersonPanel');
         if (sel) sel.value = String(id);
         if (trigger) {
-            trigger.querySelector('.pselect-placeholder').textContent = name;
-            trigger.querySelector('.pselect-placeholder').style.color = '#1f2937';
+            trigger.querySelector('.pselect-placeholder').innerHTML = '📌 ' + name;
+            trigger.querySelector('.pselect-placeholder').style.color = '#4338ca';
         }
-        togglePersonPanel();
+        // 先取消之前的 selected
+        if (panel) panel.querySelectorAll('.pselect-item.selected').forEach(function(el) { el.classList.remove('selected'); });
+        // 找到当前项，加 selected，确保其所在部门展开并滚到可见
+        var target = panel ? panel.querySelector('.pselect-item[data-id="' + id + '"]') : null;
+        if (target) {
+            target.classList.add('selected');
+            var group = target.closest('.pselect-group');
+            if (group) {
+                group.open = true;
+                // 平滑滚到选中行
+                setTimeout(function() {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }, 30);
+            }
+        }
+        // 保持下拉打开，让用户确认
     }
 
     function filterPersonPanel(q) {
