@@ -535,7 +535,7 @@ a { text-decoration: none; color: inherit; }
     border: 1px solid #4f46e5;
     border-top: none;
     border-radius: 0 0 6px 6px;
-    max-height: 380px;
+    max-height: 440px;
     overflow-y: auto;
     z-index: 200;
     box-shadow: 0 8px 16px rgba(0,0,0,.08);
