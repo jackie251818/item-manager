@@ -149,9 +149,17 @@ def init_db():
     os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'avatars'), exist_ok=True)
     os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'items'), exist_ok=True)
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=15)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
+    # 串行化多 worker 的首次初始化，避免并发建表 / 迁移
+    c.execute('BEGIN IMMEDIATE')
+
+    # 迁移只在「老库升级」场景执行（有 items 但没有 assets）；
+    # 已有的完整库直接跳过，绝不重写存量数据
+    existing_tables = {row[0] for row in c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    legacy_upgrade = 'items' in existing_tables and 'assets' not in existing_tables
 
     # 人员表
     c.execute('''
@@ -257,9 +265,12 @@ def init_db():
     admin_password = app.config['ADMIN_PASSWORD']
     c.execute("SELECT id FROM users WHERE username=?", (admin_username,))
     if not c.fetchone():
-        c.execute("INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)",
-                  (admin_username, generate_password_hash(admin_password)))
-        logger.info('init_db 已创建初始管理员账号: %s', admin_username)
+        try:
+            c.execute("INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, 1)",
+                      (admin_username, generate_password_hash(admin_password)))
+            logger.info('init_db 已创建初始管理员账号: %s', admin_username)
+        except sqlite3.IntegrityError:
+            pass  # 并发初始化时另一个 worker 已建好
 
     # ===== 审计日志表 =====
     c.execute('''
@@ -278,7 +289,7 @@ def init_db():
     asset_count = c.execute('SELECT COUNT(*) as c FROM assets').fetchone()['c']
     item_count = c.execute('SELECT COUNT(*) as c FROM items').fetchone()['c']
 
-    if asset_count == 0 and item_count > 0:
+    if legacy_upgrade and asset_count == 0 and item_count > 0:
         items = c.execute('SELECT * FROM items').fetchall()
         for item in items:
             for i in range(1, item['total_count'] + 1):
@@ -332,7 +343,7 @@ def init_db():
         "SELECT COUNT(*) as c FROM assets WHERE model IS NULL OR model = ''"
     ).fetchone()['c']
 
-    if assets_without_model > 0:
+    if legacy_upgrade and assets_without_model > 0:
         c.execute('''
             UPDATE assets
             SET model = (SELECT model FROM items WHERE items.id = assets.item_id),
@@ -342,6 +353,11 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+
+# 模块加载即初始化数据库：gunicorn 下 __name__ 不是 '__main__'，
+# 只放在启动块里会导致全新部署不建表（登录页 500）
+init_db()
 
 
 def save_uploaded_file(file_obj, subfolder):
@@ -1068,9 +1084,21 @@ def add_borrow():
     # 转成列表并排序
     item_groups = sorted(asset_by_item.values(), key=lambda x: x['item_name'])
 
+    # 再加一级「物品分类」总目录：分类 → 物品 → 单件资产
+    cat_map = {}
+    for g in item_groups:
+        cat = g['item_category'] or '未分类'
+        cat_map.setdefault(cat, []).append(g)
+    sorted_cats = sorted(cat_map.keys(), key=lambda x: (x == '未分类', x))
+    category_groups = [{
+        'category': c,
+        'groups': cat_map[c],
+        'asset_count': sum(len(g['assets']) for g in cat_map[c]),
+    } for c in sorted_cats]
+
     today = datetime.now().strftime('%Y-%m-%d')
     return render_template('borrow_form.html',
-                           persons=persons, item_groups=item_groups, today=today,
+                           persons=persons, category_groups=category_groups, today=today,
                            pre_person=request.args.get('person_id', 0, type=int))
 
 
@@ -1145,14 +1173,15 @@ def return_borrow(bid):
     db = get_db()
     return_date = request.form.get('return_date', '') or datetime.now().strftime('%Y-%m-%d')
 
-    # 获取借用记录，找到关联的资产
+    # 获取借用记录，找到关联的资产（仅对「借用中」的记录生效，防重复归还误放资产）
     borrow = db.execute('SELECT * FROM borrows WHERE id=?', (bid,)).fetchone()
-    if borrow and borrow['asset_id']:
+    if borrow and borrow['status'] == 'borrowed' and borrow['asset_id']:
         # 更新资产状态为可用
-        db.execute("UPDATE assets SET status='available' WHERE id=?", (borrow['asset_id'],))
+        db.execute("UPDATE assets SET status='available' WHERE id=? AND status='borrowed'",
+                   (borrow['asset_id'],))
 
     db.execute(
-        "UPDATE borrows SET status='returned', actual_return_date=? WHERE id=?",
+        "UPDATE borrows SET status='returned', actual_return_date=? WHERE id=? AND status='borrowed'",
         (return_date, bid)
     )
     db.commit()
@@ -1182,6 +1211,9 @@ def edit_borrow(bid):
 def delete_borrow(bid):
     db = get_db()
     b = db.execute('SELECT person_id, asset_id, status FROM borrows WHERE id=?', (bid,)).fetchone()
+    # 记录仍在借用中，删除时要把资产放回可用，否则资产会永久卡在 borrowed
+    if b and b['status'] == 'borrowed' and b['asset_id']:
+        db.execute("UPDATE assets SET status='available' WHERE id=?", (b['asset_id'],))
     db.execute('DELETE FROM borrows WHERE id=?', (bid,))
     _audit('delete', 'borrow', bid, f'person={b["person_id"] if b else ""} asset={b["asset_id"] if b else ""}')
     db.commit()
@@ -1734,6 +1766,8 @@ def import_summary():
             status_str = h('状态')
             note = h('备注')
 
+            # 每行独立保存点：单行失败只回滚该行，不影响本批次已成功的行
+            db.execute('SAVEPOINT import_row')
             try:
                 # 1) 人员：按姓名匹配，不存在则新建
                 cur = db.execute('SELECT id FROM persons WHERE name=?', (person_name,))
@@ -1799,7 +1833,7 @@ def import_summary():
                     if not existing:
                         cur = db.execute(
                             '''INSERT INTO borrows
-                               (person_id, item_id, asset_id, quantity, borrow_date, expected_return, status, note)
+                               (person_id, item_id, asset_id, quantity, borrow_date, expected_return_date, status, note)
                                VALUES (?, ?, ?, 1, ?, ?, 'borrowed', ?)''',
                             (person_id, item_id, asset_id, borrow_date, expected_return or None, note or None))
                         new_borrows += 1
@@ -1813,7 +1847,7 @@ def import_summary():
                     if not cur.fetchone():
                         db.execute(
                             '''INSERT INTO borrows
-                               (person_id, item_id, asset_id, quantity, borrow_date, expected_return, actual_return, status, note)
+                               (person_id, item_id, asset_id, quantity, borrow_date, expected_return_date, actual_return_date, status, note)
                                VALUES (?, ?, ?, 1, ?, ?, ?, 'returned', ?)''',
                             (person_id, item_id, asset_id, borrow_date, expected_return or None, borrow_date, note or None))
                         new_borrows += 1
@@ -1821,8 +1855,11 @@ def import_summary():
             except Exception as ex:
                 errors.append('第{}行: {}'.format(row_idx, str(ex)))
                 skip += 1
-                db.rollback()
+                db.execute('ROLLBACK TO SAVEPOINT import_row')
+                db.execute('RELEASE SAVEPOINT import_row')
                 continue
+            else:
+                db.execute('RELEASE SAVEPOINT import_row')
 
         db.commit()
 
@@ -1854,6 +1891,5 @@ def import_summary():
 
 # ---------- 启动 ----------
 if __name__ == '__main__':
-    init_db()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)

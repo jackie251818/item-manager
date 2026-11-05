@@ -50,50 +50,60 @@
                 <div class="selected-empty">还未选择资产，点击下方物品展开后勾选</div>
             </div>
 
-            <!-- 资产选择（按物品分组） -->
+            <!-- 资产选择（物品分类总目录 → 物品 → 单件资产） -->
             <div class="asset-picker">
                 <div class="asset-picker-search">
-                    <input type="text" id="assetSearchInput" placeholder="🔍 搜索物品名称/资产编号..." oninput="filterAssetPicker()">
+                    <input type="text" id="assetSearchInput" placeholder="🔍 搜索分类/物品名称/资产编号..." oninput="filterAssetPicker()">
                 </div>
                 <div class="asset-picker-list" id="assetPickerList">
-                    {% for group in item_groups %}
-                    <div class="ap-item-group" data-search="{{ group.item_name }} {{ group.item_category or '' }} {{ group.item_model or '' }}">
-                        <div class="ap-item-header" onclick="toggleApItemGroup(this)">
-                            <span class="ap-item-arrow">▶</span>
-                            <span class="ap-item-name">{{ group.item_name }}</span>
-                            <span class="ap-item-sub">
-                                {% if group.item_category %}{{ group.item_category }}{% endif %}
-                                {% if group.item_model %} · {{ group.item_model }}{% endif %}
-                            </span>
-                            <span class="ap-item-count">{{ group.assets|length }} 件可用</span>
+                    {% for cat in category_groups %}
+                    <div class="ap-cat-group" data-search="{{ cat.category }}">
+                        <div class="ap-cat-header" onclick="toggleApCatGroup(this)">
+                            <span class="ap-cat-arrow">▶</span>
+                            <span class="ap-cat-name">{{ cat.category }}</span>
+                            <span class="ap-cat-count">{{ cat.groups|length }} 种 · {{ cat.asset_count }} 件可用</span>
                         </div>
-                        <div class="ap-asset-list" style="display:none;">
-                            {% for asset in group.assets %}
-                            <label class="ap-asset-item" data-search="{{ asset.asset_no }} {{ asset.model or '' }} {{ asset.serial or '' }}">
-                                <input type="checkbox" class="ap-asset-check" value="{{ asset.id }}" onchange="toggleAssetSelect({{ asset.id }}, '{{ asset.asset_no }}', '{{ group.item_name }}', this.checked)">
-                                <div class="ap-asset-info">
-                                    {% if asset.image %}
-                                    <img src="{{ url_for('uploaded_file', filename=asset.image) }}" class="ap-asset-img" alt="">
-                                    {% else %}
-                                    <div class="ap-asset-img-default">📱</div>
-                                    {% endif %}
-                                    <div>
-                                        <div class="ap-asset-no">{{ asset.asset_no }}</div>
-                                        <div class="ap-asset-item-name">{{ group.item_name }}</div>
-                                        {% if asset.model or asset.serial %}
-                                        <div class="ap-asset-meta">
-                                            {% if asset.model %}<span>{{ asset.model }}</span>{% endif %}
-                                            {% if asset.serial %}<span style="font-family:monospace;">{{ asset.serial }}</span>{% endif %}
-                                        </div>
-                                        {% endif %}
-                                    </div>
+                        <div class="ap-cat-body" style="display:none;">
+                            {% for group in cat.groups %}
+                            <div class="ap-item-group" data-search="{{ group.item_name }} {{ group.item_category or '' }} {{ group.item_model or '' }}">
+                                <div class="ap-item-header" onclick="toggleApItemGroup(this)">
+                                    <span class="ap-item-arrow">▶</span>
+                                    <span class="ap-item-name">{{ group.item_name }}</span>
+                                    <span class="ap-item-sub">
+                                        {% if group.item_model %}型号：{{ group.item_model }}{% endif %}
+                                    </span>
+                                    <span class="ap-item-count">{{ group.assets|length }} 件可用</span>
                                 </div>
-                            </label>
+                                <div class="ap-asset-list" style="display:none;">
+                                    {% for asset in group.assets %}
+                                    <label class="ap-asset-item" data-search="{{ asset.asset_no }} {{ asset.model or '' }} {{ asset.serial or '' }}">
+                                        <input type="checkbox" class="ap-asset-check" value="{{ asset.id }}" onchange="toggleAssetSelect({{ asset.id }}, '{{ asset.asset_no }}', '{{ group.item_name }}', this.checked)">
+                                        <div class="ap-asset-info">
+                                            {% if asset.image %}
+                                            <img src="{{ url_for('uploaded_file', filename=asset.image) }}" class="ap-asset-img" alt="">
+                                            {% else %}
+                                            <div class="ap-asset-img-default">📱</div>
+                                            {% endif %}
+                                            <div>
+                                                <div class="ap-asset-no">{{ asset.asset_no }}</div>
+                                                <div class="ap-asset-item-name">{{ group.item_name }}</div>
+                                                {% if asset.model or asset.serial %}
+                                                <div class="ap-asset-meta">
+                                                    {% if asset.model %}<span>{{ asset.model }}</span>{% endif %}
+                                                    {% if asset.serial %}<span style="font-family:monospace;">{{ asset.serial }}</span>{% endif %}
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </label>
+                                    {% endfor %}
+                                </div>
+                            </div>
                             {% endfor %}
                         </div>
                     </div>
                     {% endfor %}
-                    {% if item_groups|length == 0 %}
+                    {% if category_groups|length == 0 %}
                     <div style="text-align:center;padding:30px;color:#9ca3af;font-size:13px;">暂无可用资产</div>
                     {% endif %}
                 </div>
@@ -167,6 +177,18 @@ function selectPerson(id, displayText) {
 }
 
 // ===== 资产选择 =====
+function toggleApCatGroup(header) {
+    var body = header.nextElementSibling;
+    var arrow = header.querySelector('.ap-cat-arrow');
+    if (body.style.display === 'none') {
+        body.style.display = '';
+        arrow.textContent = '▼';
+    } else {
+        body.style.display = 'none';
+        arrow.textContent = '▶';
+    }
+}
+
 function toggleApItemGroup(header) {
     var list = header.nextElementSibling;
     var arrow = header.querySelector('.ap-item-arrow');
@@ -223,32 +245,43 @@ function removeAssetSelect(assetId) {
 
 function filterAssetPicker() {
     var keyword = document.getElementById('assetSearchInput').value.toLowerCase().trim();
-    var groups = document.querySelectorAll('.ap-item-group');
 
-    groups.forEach(function(group) {
-        var groupText = group.getAttribute('data-search').toLowerCase();
-        var assets = group.querySelectorAll('.ap-asset-item');
-        var visibleAssetCount = 0;
+    document.querySelectorAll('.ap-cat-group').forEach(function(cat) {
+        var catText = cat.getAttribute('data-search').toLowerCase();
+        var catMatch = catText.indexOf(keyword) > -1;
+        var visibleItems = 0;
+        var catBody = cat.querySelector('.ap-cat-body');
 
-        assets.forEach(function(asset) {
-            var assetText = asset.getAttribute('data-search').toLowerCase();
-            if (assetText.indexOf(keyword) > -1 || groupText.indexOf(keyword) > -1) {
-                asset.style.display = '';
-                visibleAssetCount++;
-            } else {
-                asset.style.display = 'none';
+        cat.querySelectorAll('.ap-item-group').forEach(function(group) {
+            var groupText = group.getAttribute('data-search').toLowerCase();
+            var groupMatch = groupText.indexOf(keyword) > -1;
+            var visibleAssets = 0;
+
+            group.querySelectorAll('.ap-asset-item').forEach(function(asset) {
+                var assetText = asset.getAttribute('data-search').toLowerCase();
+                var hit = !keyword || catMatch || groupMatch || assetText.indexOf(keyword) > -1;
+                asset.style.display = hit ? '' : 'none';
+                if (hit) visibleAssets++;
+            });
+
+            var showGroup = !keyword || catMatch || groupMatch || visibleAssets > 0;
+            group.style.display = showGroup ? '' : 'none';
+            if (showGroup) visibleItems++;
+
+            // 搜索命中时自动展开物品
+            if (keyword && showGroup) {
+                group.querySelector('.ap-asset-list').style.display = '';
+                group.querySelector('.ap-item-arrow').textContent = '▼';
             }
         });
 
-        // 如果搜索关键字匹配物品名，自动展开
-        var assetList = group.querySelector('.ap-asset-list');
-        var arrow = group.querySelector('.ap-item-arrow');
-        if (keyword && (groupText.indexOf(keyword) > -1 || visibleAssetCount > 0)) {
-            assetList.style.display = '';
-            arrow.textContent = '▼';
+        var showCat = !keyword || catMatch || visibleItems > 0;
+        cat.style.display = showCat ? '' : 'none';
+        // 搜索命中时自动展开分类
+        if (keyword && showCat) {
+            catBody.style.display = '';
+            cat.querySelector('.ap-cat-arrow').textContent = '▼';
         }
-
-        group.style.display = (groupText.indexOf(keyword) > -1 || visibleAssetCount > 0) ? '' : 'none';
     });
 }
 
