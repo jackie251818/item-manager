@@ -189,6 +189,16 @@
             trigger.classList.add('open');
             var search = document.getElementById('transferPersonSearch');
             if (search) { search.value = ''; search.focus(); }
+            filterPersonPanel('');
+            // 若有已选中的人，展开其部门并滚动到该行
+            if (window.__pselectSelectedId) {
+                var cur = panel.querySelector('.pselect-item[data-id="' + window.__pselectSelectedId + '"]');
+                if (cur) {
+                    var g = cur.closest('.pselect-group');
+                    if (g) g.open = true;
+                    setTimeout(function() { cur.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 30);
+                }
+            }
         }
     }
 
@@ -201,22 +211,14 @@
             trigger.querySelector('.pselect-placeholder').innerHTML = '📌 ' + name;
             trigger.querySelector('.pselect-placeholder').style.color = '#4338ca';
         }
-        // 先取消之前的 selected
+        // 记录选中项，下次打开时高亮并滚动到该行
+        window.__pselectSelectedId = id;
         if (panel) panel.querySelectorAll('.pselect-item.selected').forEach(function(el) { el.classList.remove('selected'); });
-        // 找到当前项，加 selected，确保其所在部门展开并滚到可见
         var target = panel ? panel.querySelector('.pselect-item[data-id="' + id + '"]') : null;
-        if (target) {
-            target.classList.add('selected');
-            var group = target.closest('.pselect-group');
-            if (group) {
-                group.open = true;
-                // 平滑滚到选中行
-                setTimeout(function() {
-                    target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }, 30);
-            }
-        }
-        // 保持下拉打开，让用户确认
+        if (target) target.classList.add('selected');
+        // 选中后立即收起面板，避免遮挡弹窗底部的「确认转移」按钮
+        togglePersonPanel();
+        if (trigger) trigger.focus();
     }
 
     function filterPersonPanel(q) {
@@ -267,6 +269,9 @@
             ph.style.color = '#9ca3af';
         }
         if (window.__pselectOpen) togglePersonPanel();
+        window.__pselectSelectedId = null;
+        var panelEl = document.getElementById('transferPersonPanel');
+        if (panelEl) panelEl.querySelectorAll('.pselect-item.selected').forEach(function(el) { el.classList.remove('selected'); });
 
         var title = document.getElementById('transferModalTitle');
         var summary = document.getElementById('transferSummary');
