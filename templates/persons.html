@@ -5,7 +5,11 @@
 <div class="card">
     <div class="card-header">
         <div class="card-title">👥 人员管理</div>
-        <div style="display:flex;gap:10px;">
+        <div style="display:flex;gap:10px;align-items:center;">
+            <div style="display:flex;gap:4px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#f9fafb;">
+                <button type="button" class="btn btn-secondary" style="border:none;border-radius:0;padding:8px 12px;font-size:12px;" onclick="toggleAllDepts(true)" title="展开所有部门">▼ 全部展开</button>
+                <button type="button" class="btn btn-secondary" style="border:none;border-radius:0;padding:8px 12px;font-size:12px;border-left:1px solid #e5e7eb;" onclick="toggleAllDepts(false)" title="收起所有部门">▶ 全部收起</button>
+            </div>
             <form method="POST" action="{{ url_for('import_persons') }}" enctype="multipart/form-data" style="display:inline-flex;gap:8px;align-items:center;">
                 <input type="file" name="file" accept=".xlsx,.xls" style="display:none;" id="importPersonFile" onchange="this.form.submit();">
                 <button type="button" class="btn btn-secondary" onclick="document.getElementById('importPersonFile').click()">📥 导入</button>
@@ -212,6 +216,22 @@ function toggleDeptTable(header) {
         table.style.display = 'none';
         toggle.textContent = '▶';
     }
+}
+
+function toggleAllDepts(expand) {
+    document.querySelectorAll('.dept-table-section').forEach(function(section) {
+        var table = section.querySelector('.dept-table-body');
+        var toggle = section.querySelector('.dept-toggle-icon');
+        if (table && toggle) {
+            if (expand) {
+                table.style.display = '';
+                toggle.textContent = '▼';
+            } else {
+                table.style.display = 'none';
+                toggle.textContent = '▶';
+            }
+        }
+    });
 }
 </script>
 {% endblock %}
