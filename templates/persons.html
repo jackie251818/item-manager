@@ -6,6 +6,9 @@
     <div class="card-header">
         <div class="card-title">👥 人员管理</div>
         <div style="display:flex;gap:10px;align-items:center;">
+            <input type="text" id="personSearchInput" placeholder="🔍 搜索姓名/部门/电话..."
+                   style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;min-width:220px;outline:none;"
+                   oninput="filterPersons(this.value)">
             <div style="display:flex;gap:4px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#f9fafb;">
                 <button type="button" class="btn btn-secondary" style="border:none;border-radius:0;padding:8px 12px;font-size:12px;" onclick="toggleAllDepts(true)" title="展开所有部门">▼ 全部展开</button>
                 <button type="button" class="btn btn-secondary" style="border:none;border-radius:0;padding:8px 12px;font-size:12px;border-left:1px solid #e5e7eb;" onclick="toggleAllDepts(false)" title="收起所有部门">▶ 全部收起</button>
@@ -28,7 +31,7 @@
     {% else %}
     <div class="dept-table-container">
         {% for dept in sorted_depts %}
-        <div class="dept-table-section">
+        <div class="dept-table-section" data-dept="{{ dept }}">
             <div class="dept-table-header" onclick="toggleDeptTable(this)">
                 <span class="dept-toggle-icon">▶</span>
                 <span class="dept-table-icon">🏢</span>
@@ -49,7 +52,7 @@
                 </thead>
                 <tbody>
                     {% for person in dept_groups[dept] %}
-                    <tr>
+                    <tr data-name="{{ person.name }}" data-dept="{{ person.department or '' }}" data-phone="{{ person.phone or '' }}" data-note="{{ person.note or '' }}">
                         <td>
                             {% if person.avatar %}
                             <img src="{{ url_for('uploaded_file', filename=person.avatar) }}" class="table-avatar" alt="{{ person.name }}">
@@ -230,6 +233,43 @@ function toggleAllDepts(expand) {
                 table.style.display = 'none';
                 toggle.textContent = '▶';
             }
+        }
+    });
+}
+
+function filterPersons(q) {
+    q = (q || '').trim().toLowerCase();
+    var sections = document.querySelectorAll('.dept-table-section');
+    sections.forEach(function(section) {
+        var table = section.querySelector('.dept-table-body');
+        var toggle = section.querySelector('.dept-toggle-icon');
+        var rows = table.querySelectorAll('tbody tr');
+        var anyVisible = false;
+
+        rows.forEach(function(row) {
+            var hay = [
+                row.dataset.name || '',
+                row.dataset.dept || '',
+                row.dataset.phone || '',
+                row.dataset.note || ''
+            ].join(' ').toLowerCase();
+            var show = !q || hay.indexOf(q) >= 0;
+            row.style.display = show ? '' : 'none';
+            if (show) anyVisible = true;
+        });
+
+        // 部门整体没命中 → 隐藏整个部门 section
+        if (!q) {
+            section.style.display = '';
+            // 清空搜索时恢复默认收起状态
+            table.style.display = 'none';
+            toggle.textContent = '▶';
+        } else if (anyVisible) {
+            section.style.display = '';
+            table.style.display = '';
+            toggle.textContent = '▼';
+        } else {
+            section.style.display = 'none';
         }
     });
 }
